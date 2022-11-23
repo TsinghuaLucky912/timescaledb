@@ -1472,7 +1472,6 @@ get_jointype_name(JoinType jointype)
 	return NULL;
 }
 
-
 /*
  * Construct FROM clause for given relation
  *
@@ -1491,19 +1490,19 @@ deparseFromExprForRel(StringInfo buf, PlannerInfo *root, RelOptInfo *foreignrel,
 					  Index ignore_rel, List **ignore_conds, List **params_list)
 {
 	if (IS_JOIN_REL(foreignrel))
-    {
-	    TsFdwRelInfo *fpinfo = fdw_relinfo_get(foreignrel);
+	{
+		TsFdwRelInfo *fpinfo = fdw_relinfo_get(foreignrel);
 		StringInfoData join_sql_o;
 		StringInfoData join_sql_i;
 		RelOptInfo *outerrel = fpinfo->outerrel;
 		RelOptInfo *innerrel = fpinfo->innerrel;
 
-        //Outer Rel
+		// Outer Rel
 		RangeTblEntry *rte = planner_rt_fetch(outerrel->relid, root);
 		Relation rel = table_open(rte->relid, NoLock);
 		deparseRelation(&join_sql_o, rel);
 
-        //Inner Rel
+		// Inner Rel
 		rte = planner_rt_fetch(innerrel->relid, root);
 		rel = table_open(rte->relid, NoLock);
 		deparseRelation(&join_sql_i, rel);
@@ -1512,8 +1511,11 @@ deparseFromExprForRel(StringInfo buf, PlannerInfo *root, RelOptInfo *foreignrel,
 		 *
 		 * ((outer relation) <join type> (inner relation) ON (joinclauses))
 		 */
-		appendStringInfo(buf, "(%s %s JOIN %s ON ", join_sql_o.data,
-						 get_jointype_name(fpinfo->jointype), join_sql_i.data);
+		appendStringInfo(buf,
+						 "(%s %s JOIN %s ON ",
+						 join_sql_o.data,
+						 get_jointype_name(fpinfo->jointype),
+						 join_sql_i.data);
 
 		/* Append join clause; (TRUE) if no join clause */
 		if (fpinfo->joinclauses)
@@ -1532,7 +1534,7 @@ deparseFromExprForRel(StringInfo buf, PlannerInfo *root, RelOptInfo *foreignrel,
 		}
 		else
 			appendStringInfoString(buf, "(TRUE)");
-    }
+	}
 	else
 	{
 		RangeTblEntry *rte = planner_rt_fetch(foreignrel->relid, root);

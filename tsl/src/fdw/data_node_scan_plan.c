@@ -762,15 +762,19 @@ data_node_generate_pushdown_join_paths(PlannerInfo *root, RelOptInfo *joinrel, R
 									   RelOptInfo *innerrel, JoinType jointype,
 									   JoinPathExtraData *extra)
 {
-	//ForeignPath *joinpath;
+	ForeignPath *joinpath;
 	double rows = 0;
 	int width = 0;
 	Cost startup_cost = 0;
 	Cost total_cost = 0;
-	//Path *epq_path = NULL;
+	Path *epq_path = NULL;
 	RelOptInfo **data_node_rels;
 	int ndata_node_rels;
 	DataNodeChunkAssignments scas;
+
+	if (!ts_guc_enable_per_data_node_queries)
+		ereport(DEBUG1,
+				(errmsg("enable_per_data_node_queries needs to be enabled to pushdown joins")));
 
 	/*
 	 * Skip if this join combination has been considered already.
@@ -796,14 +800,13 @@ data_node_generate_pushdown_join_paths(PlannerInfo *root, RelOptInfo *joinrel, R
 		Assert(rel || true);
 	}
 
-	//RangeTblEntry *hyper_rte = planner_rt_fetch(hyperrel->relid, root);
+	// RangeTblEntry *hyper_rte = planner_rt_fetch(hyperrel->relid, root);
 	Cache *hcache = ts_hypertable_cache_pin();
 	Hypertable *ht = ts_hypertable_cache_get_entry(hcache, hyper_rte->relid, CACHE_FLAG_NONE);
 
 	Assert(NULL != ht);
 
 	/* Create the RelOptInfo for each data node */
-	//data_node_rels = build_data_node_part_rels(root, hyperrel, &ndata_node_rels);
 	data_node_rels = hyperrel->part_rels;
 	ndata_node_rels = hyperrel->nparts;
 
@@ -880,37 +883,35 @@ data_node_generate_pushdown_join_paths(PlannerInfo *root, RelOptInfo *joinrel, R
 		fpinfo->width = width;
 		fpinfo->startup_cost = startup_cost;
 		fpinfo->total_cost = total_cost;
-
 	}
 
 	ereport(DEBUG1, (errmsg("Pushdown join with reference table")));
 
-
 	/*
-	* Create a new join path and add it to the joinrel which represents a
-	* join between foreign tables.
-	*/
-	// joinpath = create_foreign_join_path(root,
-	// 									joinrel,
-	// 									NULL, /* default pathtarget */
-	// 									rows,
-	// 									startup_cost,
-	// 									total_cost,
-	// 									NIL, /* no pathkeys */
-	// 									joinrel->lateral_relids,
-	// 									epq_path,
-	// 									NIL); /* no fdw_private */
+	 * Create a new join path and add it to the joinrel which represents a
+	 * join between foreign tables.
+	 */
+	joinpath = create_foreign_join_path(root,
+										joinrel,
+										NULL, /* default pathtarget */
+										rows,
+										startup_cost,
+										total_cost,
+										NIL, /* no pathkeys */
+										joinrel->lateral_relids,
+										epq_path,
+										NIL); /* no fdw_private */
 
 	/* Add generated path into joinrel by add_path(). */
-	//add_path(joinrel, (Path *) joinpath);
+	add_path(joinrel, (Path *) joinpath);
 
 	/* Consider pathkeys for the join relation */
-	// fdw_add_paths_with_pathkeys_for_rel(root,
-	// 									joinrel,
-	// 									epq_path,
-	// 									data_node_scan_path_create); // TODO: Is the last
-	// 																	// parameter correct?
-
+	fdw_add_paths_with_pathkeys_for_rel(root,
+										joinrel,
+										epq_path,
+										data_node_scan_path_create); // TODO: Is the last
+																	 // parameter correct?
+																	 
 	ts_cache_release(hcache);
 
 	/* XXX Consider parameterized paths for the join relation */
