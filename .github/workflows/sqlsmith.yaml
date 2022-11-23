@@ -23,7 +23,7 @@ jobs:
     needs: config
     strategy:
       matrix:
-        os: ["ubuntu-20.04"]
+        os: ["ubuntu-22.04"]
         pg: [ "${{ fromJson(needs.config.outputs.pg14_latest) }}" ]
         cc: ["gcc"]
         build_type: ["Debug"]
@@ -38,6 +38,11 @@ jobs:
         sudo apt-get update
         sudo apt-get install flex bison systemd-coredump gdb clang-9 llvm-9 llvm-9-dev llvm-9-tools build-essential autoconf autoconf-archive libpqxx-dev libboost-regex-dev libsqlite3-dev
 
+    - name: Get date for build caching
+      id: get-date
+      run: |
+        echo "date=$(date +"%d")" >> $GITHUB_OUTPUT
+
     # this workflow depends on the cached postgres build from the main regression
     # workflow since that workflow runs daily there should always be a cache hit
     - name: Cache PostgreSQL ${{ matrix.pg }}
@@ -46,6 +51,7 @@ jobs:
       with:
         path: ~/${{ env.PG_SRC_DIR }}
         key: ${{ matrix.os }}-postgresql-${{ matrix.pg }}-${{ matrix.cc }}-${{ matrix.build_type }}
+        key: ${{ matrix.os }}-postgresql-${{ matrix.pg }}-${{ matrix.cc }}-${{ matrix.build_type }}-${{ steps.get-date.outputs.date }}-${{ hashFiles('.github/**') }}
 
     # we abort on cache miss otherwise we would have to reproduce most variables
     # of the main regression build matrix in this workflow
