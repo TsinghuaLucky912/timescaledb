@@ -35,6 +35,9 @@ jobs:
     - name: Install Dependencies
       run: sudo apt install flex bison clang-11 llvm-11 llvm-11-dev llvm-11-tools
 
+    - name: Checkout TimescaleDB
+      uses: actions/checkout@v3
+
     - name: Get date for build caching
       id: get-date
       run: |
@@ -53,21 +56,12 @@ jobs:
     # of the main regression build matrix in this workflow
     - name: Abort on cache miss
       if: steps.cache-postgresql.outputs.cache-hit != 'true'
-      # There's some crazy thing going on with github actions, when the cache
-      # is restored successfully, but at the same time the above condition is
-      # true. Print all outputs to debug it.
-      run: |
-        echo "Cache step outputs:"
-        echo "${{ join(steps.cache-postgresql.outputs.*, '\n') }}"
-        false
+      run: false
 
     - name: Install PostgreSQL ${{ matrix.pg }}
       run: |
         make -C ~/$PG_SRC_DIR install
         make -C ~/$PG_SRC_DIR/contrib/postgres_fdw install
-
-    - name: Checkout TimescaleDB
-      uses: actions/checkout@v3
 
     - name: Coverity tools
       run: |
