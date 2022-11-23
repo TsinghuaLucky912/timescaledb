@@ -837,6 +837,9 @@ data_node_generate_pushdown_join_paths(PlannerInfo *root, RelOptInfo *joinrel, R
 
 	ereport(DEBUG1, (errmsg("Pushdown join with reference table")));
 
+	// Todo: Correct?
+	joinrel -> fdwroutine = data_node_rels[0]-> fdwroutine;
+
 	/*
 	 * Compute the selectivity and cost of the local_conds, so we don't have
 	 * to do it over again for each path. The best we can do for these
