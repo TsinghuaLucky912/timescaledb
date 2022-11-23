@@ -850,7 +850,7 @@ data_node_generate_pushdown_join_paths(PlannerInfo *root, RelOptInfo *joinrel, R
 
 		if (!is_safe_to_pushdown_reftable_join(root, fpinfo))
 			return;
-
+        joinrel->fdw_private = fpinfo;
 		/*
 		 * Compute the selectivity and cost of the local_conds, so we don't have
 		 * to do it over again for each path. The best we can do for these
@@ -871,7 +871,7 @@ data_node_generate_pushdown_join_paths(PlannerInfo *root, RelOptInfo *joinrel, R
 			clauselist_selectivity(root, fpinfo->joinclauses, 0, fpinfo->jointype, extra->sjinfo);
 
 		/* Estimate costs for bare join relation */
-		//fdw_estimate_path_cost_size(root, joinrel, NIL, &rows, &width, &startup_cost, &total_cost);
+		fdw_estimate_path_cost_size(root, joinrel, NIL, &rows, &width, &startup_cost, &total_cost);
 
 		/* Now update this information in the joinrel */
 		joinrel->rows = rows;
