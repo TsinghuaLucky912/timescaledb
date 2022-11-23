@@ -68,8 +68,8 @@ SELECT * FROM timescaledb_information.job_stats;
 (0 rows)
 
 SELECT * FROM _timescaledb_catalog.continuous_agg;
- mat_hypertable_id | raw_hypertable_id | user_view_schema | user_view_name | partial_view_schema | partial_view_name | bucket_width | direct_view_schema | direct_view_name | materialized_only | finalized 
--------------------+-------------------+------------------+----------------+---------------------+-------------------+--------------+--------------------+------------------+-------------------+-----------
+ mat_hypertable_id | raw_hypertable_id | parent_mat_hypertable_id | user_view_schema | user_view_name | partial_view_schema | partial_view_name | bucket_width | direct_view_schema | direct_view_name | materialized_only | finalized 
+-------------------+-------------------+--------------------------+------------------+----------------+---------------------+-------------------+--------------+--------------------+------------------+-------------------+-----------
 (0 rows)
 
 -- though user on access node has required GRANTS, this will propagate GRANTS to the connected data nodes
@@ -484,7 +484,7 @@ view_definition |  SELECT time_bucket(2, test_continuous_agg_table."time") AS ti
                 |   GROUP BY (time_bucket(2, test_continuous_agg_table."time"));
 
 select job_status, last_run_duration
-from timescaledb_information.job_stats ps, timescaledb_information.continuous_aggregates cagg 
+from timescaledb_information.job_stats ps, timescaledb_information.continuous_aggregates cagg
 where cagg.view_name::text like '%test_continuous_agg_view'
 and cagg.materialization_hypertable_name = ps.hypertable_name;
 -[ RECORD 1 ]-----+----------

@@ -62,6 +62,12 @@ if(CMAKE_BUILD_TYPE MATCHES Debug)
     cagg_migrate_timestamptz.sql
     cagg_migrate_timestamptz_dist_ht.sql
     cagg_multi.sql
+    cagg_on_cagg_integer.sql
+    cagg_on_cagg_integer_dist_ht.sql
+    cagg_on_cagg_timestamp.sql
+    cagg_on_cagg_timestamp_dist_ht.sql
+    cagg_on_cagg_timestamptz.sql
+    cagg_on_cagg_timestamptz_dist_ht.sql
     continuous_aggs_deprecated.sql
     cagg_tableam.sql
     cagg_usage.sql
@@ -79,9 +85,7 @@ if(CMAKE_BUILD_TYPE MATCHES Debug)
     dist_copy_long.sql
     dist_ddl.sql
     dist_move_chunk.sql
-    dist_partial_agg.sql
     dist_policy.sql
-    dist_query.sql
     dist_util.sql
     dist_triggers.sql
     dist_backup.sql
@@ -130,6 +134,14 @@ set(SOLO_TESTS
     reorder
     telemetry_stats)
 
+# chunk_utils_internal creates a backup, drop the databases and restores the
+# backup. So, it should not run in parallel with other tests.
+if((${PG_VERSION_MAJOR} GREATER_EQUAL "14"))
+  if(CMAKE_BUILD_TYPE MATCHES Debug)
+    list(APPEND SOLO_TESTS chunk_utils_internal)
+  endif()
+endif()
+
 set(TEST_TEMPLATES
     compression_insert.sql.in cagg_union_view.sql.in plan_skip_scan.sql.in
     transparent_decompression.sql.in
@@ -148,6 +160,8 @@ if(CMAKE_BUILD_TYPE MATCHES Debug)
     dist_hypertable.sql.in
     remote_copy.sql.in
     dist_grant.sql.in
+    dist_partial_agg.sql.in
+    dist_query.sql.in
     cagg_invalidation_dist_ht.sql.in
     continuous_aggs.sql.in)
 endif(CMAKE_BUILD_TYPE MATCHES Debug)

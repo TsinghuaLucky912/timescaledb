@@ -297,20 +297,57 @@ values (2000, 12345, '2040-01-01 00:00:00+00'::timestamptz, '2040-01-01 00:00:01
 SELECT jsonb_pretty(get_telemetry_report() -> 'errors_by_sqlerrcode');
 -- for job statistics, insert some records into bgw_job_stats
 INSERT INTO _timescaledb_internal.bgw_job_stat
-values 
-(2000, '2040-01-01 00:00:00+00'::timestamptz, '2040-01-01 00:00:01+00'::timestamptz, '-infinity'::timestamptz, '-infinity'::timestamptz, 
+values
+(2000, '2040-01-01 00:00:00+00'::timestamptz, '2040-01-01 00:00:01+00'::timestamptz, '-infinity'::timestamptz, '-infinity'::timestamptz,
 false, 1, interval '00:00:00', interval '00:00:02', 0, 1, 0, 1, 0),
-(2001, '2040-01-01 00:00:00+00'::timestamptz, '2040-01-01 00:00:01+00'::timestamptz, '-infinity'::timestamptz, '-infinity'::timestamptz, 
+(2001, '2040-01-01 00:00:00+00'::timestamptz, '2040-01-01 00:00:01+00'::timestamptz, '-infinity'::timestamptz, '-infinity'::timestamptz,
 false, 1, interval '00:00:00', interval '00:00:02', 0, 1, 0, 1, 0),
-(2002, '2040-01-01 00:00:00+00'::timestamptz, '2040-01-01 00:00:01+00'::timestamptz, '-infinity'::timestamptz, '-infinity'::timestamptz, 
+(2002, '2040-01-01 00:00:00+00'::timestamptz, '2040-01-01 00:00:01+00'::timestamptz, '-infinity'::timestamptz, '-infinity'::timestamptz,
 false, 1, interval '00:00:00', interval '00:00:02', 0, 1, 0, 1, 0),
-(2003, '2040-01-01 00:00:00+00'::timestamptz, '2040-01-01 00:00:01+00'::timestamptz, '-infinity'::timestamptz, '-infinity'::timestamptz, 
+(2003, '2040-01-01 00:00:00+00'::timestamptz, '2040-01-01 00:00:01+00'::timestamptz, '-infinity'::timestamptz, '-infinity'::timestamptz,
 false, 1, interval '00:00:00', interval '00:00:02', 0, 1, 0, 1, 0),
-(2004, '2040-01-01 00:00:00+00'::timestamptz, '2040-01-01 00:00:01+00'::timestamptz, '-infinity'::timestamptz, '-infinity'::timestamptz, 
+(2004, '2040-01-01 00:00:00+00'::timestamptz, '2040-01-01 00:00:01+00'::timestamptz, '-infinity'::timestamptz, '-infinity'::timestamptz,
 false, 1, interval '00:00:00', interval '00:00:02', 0, 1, 0, 1, 0),
-(2005, '2040-01-01 00:00:00+00'::timestamptz, '2040-01-01 00:00:01+00'::timestamptz, '-infinity'::timestamptz, '-infinity'::timestamptz, 
+(2005, '2040-01-01 00:00:00+00'::timestamptz, '2040-01-01 00:00:01+00'::timestamptz, '-infinity'::timestamptz, '-infinity'::timestamptz,
 false, 1, interval '00:00:00', interval '00:00:02', 0, 1, 0, 1, 0);
 SELECT jsonb_pretty(get_telemetry_report() -> 'stats_by_job_type');
+
+
+-- create nested continuous aggregates - copied from cagg_on_cagg_common
+CREATE TABLE conditions (
+  time timestamptz NOT NULL,
+  temperature int
+);
+
+SELECT create_hypertable('conditions', 'time');
+CREATE MATERIALIZED VIEW conditions_summary_hourly_1
+WITH (timescaledb.continuous, timescaledb.materialized_only=true) AS
+SELECT
+  time_bucket('1 hour', "time") AS bucket,
+  SUM(temperature) AS temperature
+FROM conditions
+GROUP BY 1
+WITH NO DATA;
+
+CREATE MATERIALIZED VIEW conditions_summary_daily_2
+WITH (timescaledb.continuous, timescaledb.materialized_only=true) AS
+SELECT
+  time_bucket('1 day', "bucket") AS bucket,
+  SUM(temperature) AS temperature
+FROM conditions_summary_hourly_1
+GROUP BY 1
+WITH NO DATA;
+
+CREATE MATERIALIZED VIEW conditions_summary_weekly_3
+WITH (timescaledb.continuous, timescaledb.materialized_only=true) AS
+SELECT
+  time_bucket('1 week', "bucket") AS bucket,
+  SUM(temperature) AS temperature
+FROM conditions_summary_daily_2
+GROUP BY 1
+WITH NO DATA;
+
+SELECT jsonb_pretty(get_telemetry_report() -> 'relations' -> 'continuous_aggregates' -> 'num_caggs_nested');
 
 DROP VIEW relations;
 DROP MATERIALIZED VIEW telemetry_report;

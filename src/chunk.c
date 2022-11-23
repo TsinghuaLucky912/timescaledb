@@ -71,8 +71,6 @@ TS_FUNCTION_INFO_V1(ts_chunk_show_chunks);
 TS_FUNCTION_INFO_V1(ts_chunk_drop_chunks);
 TS_FUNCTION_INFO_V1(ts_chunk_drop_single_chunk);
 TS_FUNCTION_INFO_V1(ts_chunk_attach_osm_table_chunk);
-TS_FUNCTION_INFO_V1(ts_chunk_freeze_chunk);
-TS_FUNCTION_INFO_V1(ts_chunk_unfreeze_chunk);
 TS_FUNCTION_INFO_V1(ts_chunks_in);
 TS_FUNCTION_INFO_V1(ts_chunk_id_from_relid);
 TS_FUNCTION_INFO_V1(ts_chunk_show);
@@ -180,6 +178,15 @@ static Chunk *chunk_resurrect(const Hypertable *ht, int chunk_id);
  * in the uncompressed chunk.
  */
 #define CHUNK_STATUS_COMPRESSED_PARTIAL 8
+
+/* The name of the trigger function that blocks data modifications on frozen chunks */
+#define TS_FROZEN_TRIGGER_NAME_FUNCTION "frozen_chunk_modify_blocker"
+
+/* The name of the row freeze trigger */
+#define TS_FROZEN_TRIGGER_NAME_ROW "frozen_chunk_modify_blocker_row"
+
+/* The name of the statement freeze trigger */
+#define TS_FROZEN_TRIGGER_NAME_STMT "frozen_chunk_modify_blocker_stmt"
 
 static HeapTuple
 chunk_formdata_make_tuple(const FormData_chunk *fd, TupleDesc desc)
@@ -3523,7 +3530,31 @@ ts_chunk_set_partial(Chunk *chunk)
 	return ts_chunk_add_status(chunk, CHUNK_STATUS_COMPRESSED_PARTIAL);
 }
 
-/*No inserts,updates and deletes are permitted on a frozen chunk.
+#if PG14_GE
+/* Install a new trigger of the given table OID */
+static void
+install_chunk_trigger(CreateTrigStmt *stmt, Oid table_oid)
+{
+	ObjectAddress objaddr;
+
+	objaddr = CreateTrigger(stmt,
+							NULL,
+							table_oid,
+							InvalidOid,
+							InvalidOid,
+							InvalidOid,
+							InvalidOid,
+							InvalidOid,
+							NULL,
+							false,
+							false);
+
+	if (!OidIsValid(objaddr.objectId))
+		elog(ERROR, "could not create internal blocker trigger on %d", table_oid);
+}
+#endif
+
+/* No inserts, updates, and deletes are permitted on a frozen chunk.
  * Compression policies etc do not run on a frozen chunk.
  * Only valid operation is dropping the chunk
  */
@@ -3531,6 +3562,59 @@ bool
 ts_chunk_set_frozen(Chunk *chunk)
 {
 #if PG14_GE
+
+	char *relname = get_rel_name(chunk->table_id);
+	Oid schemaid = get_rel_namespace(chunk->table_id);
+	char *schema = get_namespace_name(schemaid);
+
+	/* Create a trigger that reject data modifications on the frozen chunk.
+	 *
+	 * Operations like inserts and compression / decompression check the
+	 * state of chunks directly in the code path. However, operations like
+	 * updates and deletes are handled by PostgreSQL. For these remaining
+	 * operations, the trigger is responsible for rejecting the operation
+	 * on the frozen chunk.
+	 *
+	 * We need to create a row and a statement trigger. To block
+	 * INSERT / UPDATE / DELETE operations, we need a row trigger. Since
+	 * the trigger is installed on the chunk, a statement-based trigger
+	 * will not fire for the individual chunks on these operations.
+	 *
+	 * A trigger that fires on TRUNCATE operations needs to be a statement
+	 * trigger; PostgreSQL does not support row based TRUNCATE triggers.
+	 * These triggers will also fire on the individual chunks.
+	 */
+
+	/* Row based INSERT / UPDATE / DELETE trigger */
+	CreateTrigStmt stmt_chunk_trigger_row = {
+		.type = T_CreateTrigStmt,
+		.row = true,
+		.timing = TRIGGER_TYPE_BEFORE,
+		.trigname = TS_FROZEN_TRIGGER_NAME_ROW,
+		.relation = makeRangeVar(schema, relname, -1),
+		.funcname = list_make2(makeString(INTERNAL_SCHEMA_NAME),
+							   makeString(TS_FROZEN_TRIGGER_NAME_FUNCTION)),
+		.args = NIL,
+		.events = TRIGGER_TYPE_INSERT | TRIGGER_TYPE_DELETE | TRIGGER_TYPE_UPDATE,
+	};
+
+	install_chunk_trigger(&stmt_chunk_trigger_row, chunk->table_id);
+
+	/* Statement based TRUNCATE trigger */
+	CreateTrigStmt stmt_chunk_trigger_statement = {
+		.type = T_CreateTrigStmt,
+		.row = false,
+		.timing = TRIGGER_TYPE_BEFORE,
+		.trigname = TS_FROZEN_TRIGGER_NAME_STMT,
+		.relation = makeRangeVar(schema, relname, -1),
+		.funcname = list_make2(makeString(INTERNAL_SCHEMA_NAME),
+							   makeString(TS_FROZEN_TRIGGER_NAME_FUNCTION)),
+		.args = NIL,
+		.events = TRIGGER_TYPE_TRUNCATE,
+	};
+
+	install_chunk_trigger(&stmt_chunk_trigger_statement, chunk->table_id);
+
 	return ts_chunk_add_status(chunk, CHUNK_STATUS_FROZEN);
 #else
 	elog(ERROR, "freeze chunk supported only for PG14 or greater");
@@ -3542,7 +3626,60 @@ bool
 ts_chunk_unset_frozen(Chunk *chunk)
 {
 #if PG14_GE
+	Relation tgrel;
+	ScanKeyData skey[1];
+	SysScanDesc tgscan;
+	HeapTuple tuple;
+	int deleted_triggers = 0;
+
+	/* Search for the freeze triggers on the chunk and remove them. */
+	tgrel = table_open(TriggerRelationId, RowExclusiveLock);
+
+	ScanKeyInit(&skey[0],
+				Anum_pg_trigger_tgrelid,
+				BTEqualStrategyNumber,
+				F_OIDEQ,
+				ObjectIdGetDatum(chunk->table_id));
+
+	tgscan = systable_beginscan(tgrel, TriggerRelidNameIndexId, true, NULL, 1, skey);
+
+	while (HeapTupleIsValid(tuple = systable_getnext(tgscan)))
+	{
+		Form_pg_trigger trig = (Form_pg_trigger) GETSTRUCT(tuple);
+
+		if ((namestrcmp(&(trig->tgname), TS_FROZEN_TRIGGER_NAME_STMT) == 0) ||
+			(namestrcmp(&(trig->tgname), TS_FROZEN_TRIGGER_NAME_ROW) == 0))
+		{
+			ObjectAddress objaddr = { .classId = TriggerRelationId, .objectId = trig->oid };
+			performDeletion(&objaddr, DROP_RESTRICT, 0);
+			deleted_triggers++;
+		}
+	}
+
+	systable_endscan(tgscan);
+	table_close(tgrel, RowExclusiveLock);
+
+	if (deleted_triggers != 2)
+	{
+		ereport(WARNING,
+				(errcode(ERRCODE_INTERNAL_ERROR),
+				 errmsg("found only %d frozen trigger on %s (2 expected)",
+						deleted_triggers,
+						get_rel_name(chunk->table_id))));
+	}
+
 	return ts_chunk_clear_status(chunk, CHUNK_STATUS_FROZEN);
+#else
+	elog(ERROR, "freeze chunk supported only for PG14 or greater");
+	return false;
+#endif
+}
+
+bool
+ts_chunk_is_frozen(Chunk *chunk)
+{
+#if PG14_GE
+	return ts_flags_are_set_32(chunk->fd.status, CHUNK_STATUS_FROZEN);
 #else
 	elog(ERROR, "freeze chunk supported only for PG14 or greater");
 	return false;
@@ -4119,59 +4256,6 @@ find_hypertable_from_table_or_cagg(Cache *hcache, Oid relid, bool allow_matht)
 	}
 
 	return ht;
-}
-
-/* Data in a frozen chunk cannot be modified. So any operation
- * that rewrites data for a frozen chunk will be blocked.
- * Note that a frozen chunk can still be dropped.
- */
-Datum
-ts_chunk_freeze_chunk(PG_FUNCTION_ARGS)
-{
-	Oid chunk_relid = PG_ARGISNULL(0) ? InvalidOid : PG_GETARG_OID(0);
-	TS_PREVENT_FUNC_IF_READ_ONLY();
-	Chunk *chunk = ts_chunk_get_by_relid(chunk_relid, true);
-	Assert(chunk != NULL);
-	if (chunk->relkind == RELKIND_FOREIGN_TABLE)
-	{
-		ereport(ERROR,
-				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("operation not supported on distributed chunk or foreign table \"%s\"",
-						get_rel_name(chunk_relid))));
-	}
-	if (ts_flags_are_set_32(chunk->fd.status, CHUNK_STATUS_FROZEN))
-		PG_RETURN_BOOL(true);
-	/* get Share lock. will wait for other concurrent transactions that are
-	 * modifying the chunk. Does not block SELECTs on the chunk.
-	 * Does not block other DDL on the chunk table.
-	 */
-	DEBUG_WAITPOINT("freeze_chunk_before_lock");
-	LockRelationOid(chunk_relid, ShareLock);
-	bool ret = ts_chunk_set_frozen(chunk);
-	PG_RETURN_BOOL(ret);
-}
-
-Datum
-ts_chunk_unfreeze_chunk(PG_FUNCTION_ARGS)
-{
-	Oid chunk_relid = PG_ARGISNULL(0) ? InvalidOid : PG_GETARG_OID(0);
-	TS_PREVENT_FUNC_IF_READ_ONLY();
-	Chunk *chunk = ts_chunk_get_by_relid(chunk_relid, true);
-	Assert(chunk != NULL);
-	if (chunk->relkind == RELKIND_FOREIGN_TABLE)
-	{
-		ereport(ERROR,
-				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("operation not supported on distributed chunk or foreign table \"%s\"",
-						get_rel_name(chunk_relid))));
-	}
-	if (!ts_flags_are_set_32(chunk->fd.status, CHUNK_STATUS_FROZEN))
-		PG_RETURN_BOOL(true);
-	/* This is a previously frozen chunk. Only selects are permitted on this chunk.
-	 * This changes the status in the catalog to allow previously blocked operations.
-	 */
-	bool ret = ts_chunk_unset_frozen(chunk);
-	PG_RETURN_BOOL(ret);
 }
 
 Datum
