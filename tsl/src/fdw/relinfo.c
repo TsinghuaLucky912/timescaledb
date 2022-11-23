@@ -55,7 +55,7 @@
  *
  * New options might also require tweaking merge_fdw_options().
  */
-static void
+void
 apply_fdw_and_server_options(TsFdwRelInfo *fpinfo)
 {
 	ListCell *lc;

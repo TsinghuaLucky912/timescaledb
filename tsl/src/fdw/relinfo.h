@@ -155,5 +155,5 @@ extern TsFdwRelInfo *fdw_relinfo_create(PlannerInfo *root, RelOptInfo *rel, Oid 
 										Oid local_table_id, TsFdwRelInfoType type);
 extern TsFdwRelInfo *fdw_relinfo_alloc_or_get(RelOptInfo *rel);
 extern TsFdwRelInfo *fdw_relinfo_get(RelOptInfo *rel);
-
+extern void apply_fdw_and_server_options(TsFdwRelInfo *fpinfo);
 #endif /* TIMESCALEDB_TSL_FDW_RELINFO_H */
