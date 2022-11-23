@@ -56,7 +56,13 @@ jobs:
     # of the main regression build matrix in this workflow
     - name: Abort on cache miss
       if: steps.cache-postgresql.outputs.cache-hit != 'true'
-      run: false
+      # There's some crazy thing going on with github actions, when the cache
+      # is restored successfully, but at the same time the above condition is
+      # true. Print all outputs to debug it.
+      run: |
+        echo "Cache step outputs:"
+        echo "${{ join(steps.cache-postgresql.outputs.*, '\n') }}"
+        false
 
     - name: Install PostgreSQL ${{ matrix.pg }} ${{ matrix.build_type }}
       run: |
