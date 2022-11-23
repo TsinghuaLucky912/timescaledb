@@ -50,7 +50,6 @@ jobs:
       uses: actions/cache@v3
       with:
         path: ~/${{ env.PG_SRC_DIR }}
-        key: ${{ matrix.os }}-postgresql-${{ matrix.pg }}-${{ matrix.cc }}-${{ matrix.build_type }}
         key: ${{ matrix.os }}-postgresql-${{ matrix.pg }}-${{ matrix.cc }}-${{ matrix.build_type }}-${{ steps.get-date.outputs.date }}-${{ hashFiles('.github/**') }}
 
     # we abort on cache miss otherwise we would have to reproduce most variables
