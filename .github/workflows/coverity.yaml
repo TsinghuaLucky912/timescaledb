@@ -33,7 +33,7 @@ jobs:
       MAKE_JOBS: 4
     steps:
     - name: Install Dependencies
-      run: sudo apt install flex bison clang-9 llvm-9 llvm-9-dev llvm-9-tools
+      run: sudo apt install flex bison clang-11 llvm-11 llvm-11-dev llvm-11-tools
 
     - name: Get date for build caching
       id: get-date
