@@ -50,7 +50,7 @@ jobs:
       uses: actions/cache@v3
       with:
         path: ~/${{ env.PG_SRC_DIR }}
-        key: ${{ matrix.os }}-postgresql-${{ matrix.pg }}-gcc-Release-xxx
+        key: ${{ matrix.os }}-postgresql-${{ matrix.pg }}-gcc-Release-${{ steps.get-date.outputs.date }}-${{ hashFiles('.github/**') }}-xxx
 
     # we abort on cache miss otherwise we would have to reproduce most variables
     # of the main regression build matrix in this workflow
