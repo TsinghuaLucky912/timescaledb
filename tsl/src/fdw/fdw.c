@@ -99,7 +99,7 @@ get_foreign_paths(PlannerInfo *root, RelOptInfo *baserel, Oid foreigntableid)
 	if (baserel->reloptkind == RELOPT_JOINREL)
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("foreign joins are not supported")));
+				 errmsg("foreign joins are not supported - fdw")));
 
 	/*
 	 * Create simplest ForeignScan path node and add it to baserel.  This path
@@ -139,7 +139,7 @@ get_foreign_plan(PlannerInfo *root, RelOptInfo *foreignrel, Oid foreigntableid,
 
 	memset(&info, 0, sizeof(ScanInfo));
 
-	fdw_scan_info_init(&info, root, foreignrel, &best_path->path, scan_clauses);
+	fdw_scan_info_init(&info, root, foreignrel, &best_path->path, scan_clauses, outer_plan);
 
 	/*
 	 * Create the ForeignScan node for the given relation.
