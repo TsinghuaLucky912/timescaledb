@@ -109,7 +109,7 @@ jobs:
       id: cache-postgresql
       with:
         path: ~\PostgreSQL\${{ matrix.pg }}
-        key: ${{ runner.os }}-build-pg${{ matrix.pkg_version }}-${{ steps.get-date.outputs.date }}-${{ hashFiles('.github/**') }}-xxx
+        key: ${{ runner.os }}-build-pg${{ matrix.pkg_version }}-${{ steps.get-date.outputs.date }}-${{ hashFiles('.github/**') }}
 
     - name: Install PostgreSQL ${{ matrix.pg }}
       if: steps.cache-postgresql.outputs.cache-hit != 'true'

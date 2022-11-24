@@ -95,13 +95,7 @@ jobs:
       uses: actions/cache@v3
       with:
         path: ~/${{ env.PG_SRC_DIR }}
-        # GitHub cache has some very unique behavior:
-        # 1) it matches on key prefix, says that "Cache restored successfully",
-        #    but then the `cache-hit` is set to false. Add "-xxx" at the end to
-        #    prevent this.
-        # 2) it doesn't match any branches except the same or the default branch.
-        #    Nothing we can do about it.
-        key: ${{ matrix.os }}-postgresql-${{ matrix.pg }}-${{ matrix.cc }}-${{ matrix.build_type }}-${{ steps.get-date.outputs.date }}-${{ hashFiles('.github/**') }}${{ env.CACHE_SUFFIX }}-xxx
+        key: ${{ matrix.os }}-postgresql-${{ matrix.pg }}-${{ matrix.cc }}-${{ matrix.build_type }}-${{ steps.get-date.outputs.date }}-${{ hashFiles('.github/**') }}${{ env.CACHE_SUFFIX }}
 
     - name: Build PostgreSQL ${{ matrix.pg }}${{ matrix.snapshot }} ${{ matrix.build_type }}
       if: steps.cache-postgresql.outputs.cache-hit != 'true'
