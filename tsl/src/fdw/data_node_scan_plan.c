@@ -815,8 +815,11 @@ data_node_generate_pushdown_join_paths(PlannerInfo *root, RelOptInfo *joinrel, R
 	 * the entry.
 	 */
 	fpinfo = (TsFdwRelInfo *) palloc0(sizeof(TsFdwRelInfo));
+	TimescaleDBPrivate *timescaledbDBrivate =
+		(TimescaleDBPrivate *) palloc0(sizeof(TimescaleDBPrivate));
+	timescaledbDBrivate->fdw_relation_info = fpinfo;
 	fpinfo->pushdown_safe = false;
-	joinrel->fdw_private = fpinfo;
+	joinrel->fdw_private = timescaledbDBrivate;
 	/* attrs_used is only for base relations. */
 	fpinfo->attrs_used = NULL;
 

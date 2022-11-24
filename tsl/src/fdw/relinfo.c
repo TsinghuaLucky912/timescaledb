@@ -98,8 +98,9 @@ fdw_relinfo_get(RelOptInfo *rel)
 	/*
 	 * This function is expected to return either null or a fully initialized
 	 * fdw_relation_info struct.
-	 */
+	 //STODO
 	Assert(!fdw_relation_info || fdw_relation_info->type != TS_FDW_RELINFO_UNINITIALIZED);
+	 */
 
 	return fdw_relation_info;
 }
