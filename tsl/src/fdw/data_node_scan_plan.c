@@ -838,10 +838,14 @@ data_node_generate_pushdown_join_paths(PlannerInfo *root, RelOptInfo *joinrel, R
 		return;
 	}
 
+	fpinfo->innerrel=innerrel;
+	fpinfo->outerrel=outerrel;
+
 	ereport(DEBUG1, (errmsg("Pushdown join with reference table")));
 
 	// Todo: Correct?
 	joinrel -> fdwroutine = data_node_rels[0]-> fdwroutine;
+	joinrel -> serverid = data_node_rels[0]->serverid;
 
 	/*
 	 * Compute the selectivity and cost of the local_conds, so we don't have

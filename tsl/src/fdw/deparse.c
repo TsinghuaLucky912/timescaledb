@@ -1500,11 +1500,13 @@ deparseFromExprForRel(StringInfo buf, PlannerInfo *root, RelOptInfo *foreignrel,
 		// Outer Rel
 		RangeTblEntry *rte = planner_rt_fetch(outerrel->relid, root);
 		Relation rel = table_open(rte->relid, NoLock);
+		initStringInfo(&join_sql_o);
 		deparseRelation(&join_sql_o, rel);
 
 		// Inner Rel
 		rte = planner_rt_fetch(innerrel->relid, root);
 		rel = table_open(rte->relid, NoLock);
+		initStringInfo(&join_sql_i);
 		deparseRelation(&join_sql_i, rel);
 		/*
 		 * For a join relation FROM clause entry is deparsed as
