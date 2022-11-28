@@ -777,6 +777,10 @@ data_node_generate_pushdown_join_paths(PlannerInfo *root, RelOptInfo *joinrel, R
 	Path *epq_path = NULL;
 	RelOptInfo **data_node_rels;
 	int ndata_node_rels;
+	List *data_node_rels_list = NIL;
+#if PG15_GE
+	Bitmapset *data_node_live_rels = NULL;
+#endif
 
 	/* Left table has to be distibuted */
 	Assert(outerrel->fdw_private != NULL);
@@ -798,8 +802,8 @@ data_node_generate_pushdown_join_paths(PlannerInfo *root, RelOptInfo *joinrel, R
 		ereport(DEBUG1,
 				(errmsg("enable_per_data_node_queries needs to be enabled to pushdown joins")));
 
-	RelOptInfo *hyperrel = root->simple_rel_array[1]; // TODO: Fixme
-	RangeTblEntry *hyper_rte = root->simple_rte_array[1];
+	RelOptInfo *hyperrel = root->simple_rel_array[1];	  // TODO: Fixme, make dynamic
+	RangeTblEntry *hyper_rte = root->simple_rte_array[1]; // TODO: Fixme, make dynamic
 
 	Cache *hcache = ts_hypertable_cache_pin();
 	Hypertable *ht = ts_hypertable_cache_get_entry(hcache, hyper_rte->relid, CACHE_FLAG_NONE);
@@ -849,10 +853,6 @@ data_node_generate_pushdown_join_paths(PlannerInfo *root, RelOptInfo *joinrel, R
 
 	ereport(DEBUG1, (errmsg("Pushdown join with reference table")));
 
-	// Todo: Correct?
-	joinrel->fdwroutine = data_node_rels[0]->fdwroutine;
-	joinrel->serverid = data_node_rels[0]->serverid;
-
 	/*
 	 * Compute the selectivity and cost of the local_conds, so we don't have
 	 * to do it over again for each path. The best we can do for these
@@ -883,30 +883,80 @@ data_node_generate_pushdown_join_paths(PlannerInfo *root, RelOptInfo *joinrel, R
 	fpinfo->startup_cost = startup_cost;
 	fpinfo->total_cost = total_cost;
 
-	/*
-	 * Create a new join path and add it to the joinrel which represents a
-	 * join between foreign tables.
-	 */
-	joinpath = data_node_join_path_create(root,
-										  joinrel,
-										  NULL, /* default pathtarget */
-										  rows,
-										  startup_cost,
-										  total_cost,
-										  NIL, /* no pathkeys */
-										  joinrel->lateral_relids,
-										  epq_path,
-										  NIL); /* no fdw_private */
+	for (int i = 0; i < ndata_node_rels; i++)
+	{
+		RelOptInfo *data_node_rel = data_node_rels[i];
+		Assert(data_node_rel);
 
-	/* Add generated path into joinrel by add_path(). */
-	add_path(joinrel, (Path *) joinpath);
+		/*
+		 * Create a new join path and add it to the joinrel which represents a
+		 * join between foreign tables.
+		 */
+		joinpath = data_node_join_path_create(root,
+											  data_node_rel,
+											  NULL, /* default pathtarget */
+											  rows,
+											  startup_cost,
+											  total_cost,
+											  NIL, /* no pathkeys */
+											  NULL /*joinrel->lateral_relids*/,
+											  epq_path,
+											  NIL); /* no fdw_private */
 
-	/* Consider pathkeys for the join relation */
-	fdw_add_paths_with_pathkeys_for_rel(root,
-										joinrel,
-										epq_path,
-										data_node_scan_path_create); // TODO: Is the last
-																	 // parameter correct?
+		Assert(joinpath);
+
+		/* Discard any pre-existing paths; no further need for them */
+		data_node_rel->pathlist = NIL;
+		data_node_rel->partial_pathlist = NIL;
+
+		/* Let the data node relation know about the join */
+		fpinfo = fdw_relinfo_get(data_node_rel);
+		Assert(fpinfo != NULL);
+		fpinfo->innerrel = innerrel;
+		fpinfo->outerrel = outerrel;
+
+		/* Convert the data node relation into a supplier for a join. So, the
+		 * de-parser generates join statements instead of selections. */
+		data_node_rel->reloptkind = RELOPT_OTHER_JOINREL;
+
+		if (!bms_is_empty(fpinfo->sca->chunk_relids))
+		{
+			/* Add generated path into joinrel by add_path(). */
+			fdw_utils_add_path(data_node_rel, (Path *) joinpath);
+			data_node_rels_list = lappend(data_node_rels_list, data_node_rel);
+		}
+		else
+			ts_set_dummy_rel_pathlist(data_node_rel);
+
+		set_cheapest(data_node_rel);
+
+#ifdef TS_DEBUG
+		/* Call 'SET client_min_messages TO DEBUG2;' to see the output */
+		if (ts_debug_optimizer_flags.show_rel)
+			tsl_debug_log_rel_with_paths(root, data_node_rel, (UpperRelationKind *) NULL);
+#endif
+
+		/* Consider pathkeys for the join relation */
+		fdw_add_paths_with_pathkeys_for_rel(root,
+											data_node_rel,
+											epq_path,
+											data_node_scan_path_create); // TODO: Is the last
+																		 // parameter correct?
+	}
+
+	Assert(list_length(data_node_rels_list) > 0);
+
+	/* Reset the pathlist since data node scans are preferred */
+	joinrel->pathlist = NIL;
+
+	/* Must keep partitioning info consistent with the append paths we create */
+	joinrel->part_rels = data_node_rels;
+	joinrel->nparts = ndata_node_rels;
+#if PG15_GE
+	hyper_rel->live_parts = data_node_live_rels;
+#endif
+
+	add_paths_to_append_rel(root, joinrel, data_node_rels_list);
 
 	ts_cache_release(hcache);
 
