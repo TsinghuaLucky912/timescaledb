@@ -73,6 +73,12 @@ static Path *data_node_scan_path_create(PlannerInfo *root, RelOptInfo *rel, Path
 										double rows, Cost startup_cost, Cost total_cost,
 										List *pathkeys, Relids required_outer, Path *fdw_outerpath,
 										List *private);
+
+static Path *data_node_join_path_create(PlannerInfo *root, RelOptInfo *rel, PathTarget *target,
+										double rows, Cost startup_cost, Cost total_cost,
+										List *pathkeys, Relids required_outer, Path *fdw_outerpath,
+										List *private);
+
 static Path *data_node_scan_upper_path_create(PlannerInfo *root, RelOptInfo *rel,
 											  PathTarget *target, double rows, Cost startup_cost,
 											  Cost total_cost, List *pathkeys, Path *fdw_outerpath,
@@ -763,7 +769,7 @@ data_node_generate_pushdown_join_paths(PlannerInfo *root, RelOptInfo *joinrel, R
 									   JoinPathExtraData *extra)
 {
 	TsFdwRelInfo *fpinfo;
-	ForeignPath *joinpath;
+	Path *joinpath;
 	double rows = 0;
 	int width = 0;
 	Cost startup_cost = 0;
@@ -838,14 +844,14 @@ data_node_generate_pushdown_join_paths(PlannerInfo *root, RelOptInfo *joinrel, R
 		return;
 	}
 
-	fpinfo->innerrel=innerrel;
-	fpinfo->outerrel=outerrel;
+	fpinfo->innerrel = innerrel;
+	fpinfo->outerrel = outerrel;
 
 	ereport(DEBUG1, (errmsg("Pushdown join with reference table")));
 
 	// Todo: Correct?
-	joinrel -> fdwroutine = data_node_rels[0]-> fdwroutine;
-	joinrel -> serverid = data_node_rels[0]->serverid;
+	joinrel->fdwroutine = data_node_rels[0]->fdwroutine;
+	joinrel->serverid = data_node_rels[0]->serverid;
 
 	/*
 	 * Compute the selectivity and cost of the local_conds, so we don't have
@@ -881,16 +887,16 @@ data_node_generate_pushdown_join_paths(PlannerInfo *root, RelOptInfo *joinrel, R
 	 * Create a new join path and add it to the joinrel which represents a
 	 * join between foreign tables.
 	 */
-	joinpath = create_foreign_join_path(root,
-										joinrel,
-										NULL, /* default pathtarget */
-										rows,
-										startup_cost,
-										total_cost,
-										NIL, /* no pathkeys */
-										joinrel->lateral_relids,
-										epq_path,
-										NIL); /* no fdw_private */
+	joinpath = data_node_join_path_create(root,
+										  joinrel,
+										  NULL, /* default pathtarget */
+										  rows,
+										  startup_cost,
+										  total_cost,
+										  NIL, /* no pathkeys */
+										  joinrel->lateral_relids,
+										  epq_path,
+										  NIL); /* no fdw_private */
 
 	/* Add generated path into joinrel by add_path(). */
 	add_path(joinrel, (Path *) joinpath);
@@ -1177,6 +1183,54 @@ data_node_scan_path_create(PlannerInfo *root, RelOptInfo *rel, PathTarget *targe
 	scanpath->cpath.path.parent = rel;
 	scanpath->cpath.path.pathtarget = target ? target : rel->reltarget;
 	scanpath->cpath.path.param_info = get_baserel_parampathinfo(root, rel, required_outer);
+	scanpath->cpath.path.parallel_aware = false;
+	scanpath->cpath.path.parallel_safe = rel->consider_parallel;
+	scanpath->cpath.path.parallel_workers = 0;
+	scanpath->cpath.path.rows = rows;
+	scanpath->cpath.path.startup_cost = startup_cost;
+	scanpath->cpath.path.total_cost = total_cost;
+	scanpath->cpath.path.pathkeys = pathkeys;
+
+	return &scanpath->cpath.path;
+}
+
+/*
+ * data_node_join_path_create
+ *	  Creates a path corresponding to a scan of a foreign join,
+ *	  returning the pathnode.
+ *
+ * This code is based on create_foreign_join_path from pathnode.c
+ *
+ * There is a usually-sane default forthe pathtarget (rel->reltarget),
+ * so we let a NULL for "target" select that.
+ */
+static Path *
+data_node_join_path_create(PlannerInfo *root, RelOptInfo *rel, PathTarget *target, double rows,
+						   Cost startup_cost, Cost total_cost, List *pathkeys,
+						   Relids required_outer, Path *fdw_outerpath, List *private)
+{
+	DataNodeScanPath *scanpath = palloc0(sizeof(DataNodeScanPath));
+
+	if (rel->lateral_relids && !bms_is_subset(rel->lateral_relids, required_outer))
+		required_outer = bms_union(required_outer, rel->lateral_relids);
+
+	/*
+	 * We should use get_joinrel_parampathinfo to handle parameterized paths,
+	 * but the API of this function doesn't support it, and existing
+	 * extensions aren't yet trying to build such paths anyway.  For the
+	 * moment just throw an error if someone tries it; eventually we should
+	 * revisit this.
+	 */
+	if (!bms_is_empty(required_outer) || !bms_is_empty(rel->lateral_relids))
+		elog(ERROR, "parameterized foreign joins are not supported yet");
+
+	scanpath->cpath.path.type = T_CustomPath;
+	scanpath->cpath.path.pathtype = T_CustomScan;
+	scanpath->cpath.custom_paths = fdw_outerpath == NULL ? NIL : list_make1(fdw_outerpath);
+	scanpath->cpath.methods = &data_node_scan_path_methods;
+	scanpath->cpath.path.parent = rel;
+	scanpath->cpath.path.pathtarget = target ? target : rel->reltarget;
+	scanpath->cpath.path.param_info = NULL; /* XXX see above */
 	scanpath->cpath.path.parallel_aware = false;
 	scanpath->cpath.path.parallel_safe = rel->consider_parallel;
 	scanpath->cpath.path.parallel_workers = 0;

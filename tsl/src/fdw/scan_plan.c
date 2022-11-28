@@ -545,7 +545,7 @@ fdw_scan_info_init(ScanInfo *scaninfo, PlannerInfo *root, RelOptInfo *rel, Path 
 		 */
 		if (outer_plan)
 		{
-			ListCell   *lc;
+			ListCell *lc;
 
 			/*
 			 * Right now, we only consider grouping and aggregation beyond
@@ -560,9 +560,9 @@ fdw_scan_info_init(ScanInfo *scaninfo, PlannerInfo *root, RelOptInfo *rel, Path 
 			 * which case we'll fail to remove them; it's not worth working
 			 * harder than this.
 			 */
-			foreach(lc, local_exprs)
+			foreach (lc, local_exprs)
 			{
-				Node	   *qual = lfirst(lc);
+				Node *qual = lfirst(lc);
 
 				outer_plan->qual = list_delete(outer_plan->qual, qual);
 
@@ -572,15 +572,13 @@ fdw_scan_info_init(ScanInfo *scaninfo, PlannerInfo *root, RelOptInfo *rel, Path 
 				 * in the mergequals or hashquals, but we can't touch those
 				 * without breaking the plan.)
 				 */
-				if (IsA(outer_plan, NestLoop) ||
-					IsA(outer_plan, MergeJoin) ||
+				if (IsA(outer_plan, NestLoop) || IsA(outer_plan, MergeJoin) ||
 					IsA(outer_plan, HashJoin))
 				{
-					Join	   *join_plan = (Join *) outer_plan;
+					Join *join_plan = (Join *) outer_plan;
 
 					if (join_plan->jointype == JOIN_INNER)
-						join_plan->joinqual = list_delete(join_plan->joinqual,
-														  qual);
+						join_plan->joinqual = list_delete(join_plan->joinqual, qual);
 				}
 			}
 
@@ -588,8 +586,8 @@ fdw_scan_info_init(ScanInfo *scaninfo, PlannerInfo *root, RelOptInfo *rel, Path 
 			 * Now fix the subplan's tlist --- this might result in inserting
 			 * a Result node atop the plan tree.
 			 */
-			outer_plan = change_plan_targetlist(outer_plan, fdw_scan_tlist,
-												best_path->parallel_safe);
+			outer_plan =
+				change_plan_targetlist(outer_plan, fdw_scan_tlist, best_path->parallel_safe);
 		}
 	}
 	else

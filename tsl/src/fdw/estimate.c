@@ -256,7 +256,7 @@ get_join_rel_estimate(PlannerInfo *root, RelOptInfo *rel, CostEstimate *ce)
 	fpinfo_i = root->simple_rel_array[2];
 	for (int i = 0; i < ndata_node_rels; i++)
 	{
-	    fpinfo_o = fdw_relinfo_get(data_node_rels[i]);
+		fpinfo_o = fdw_relinfo_get(data_node_rels[i]);
 
 		/* Estimate of number of rows in cross product */
 		nrows = fpinfo_i->rows * fpinfo_o->rows;
@@ -288,7 +288,7 @@ get_join_rel_estimate(PlannerInfo *root, RelOptInfo *rel, CostEstimate *ce)
 		 * tables) since we do not know what strategy the foreign server
 		 * is going to use.
 		 */
-		//startup_cost = fpinfo_i->rel_startup_cost + fpinfo_o->rel_startup_cost;
+		// startup_cost = fpinfo_i->rel_startup_cost + fpinfo_o->rel_startup_cost;
 		startup_cost += join_cost.startup;
 		startup_cost += remote_conds_cost.startup;
 		startup_cost += fpinfo->local_conds_cost.startup;
@@ -308,7 +308,7 @@ get_join_rel_estimate(PlannerInfo *root, RelOptInfo *rel, CostEstimate *ce)
 		 * 4. Run time cost of applying nonpushable other clauses locally
 		 * on the result fetched from the foreign server.
 		 */
-		//run_cost = fpinfo_i->rel_total_cost - fpinfo_i->rel_startup_cost;
+		// run_cost = fpinfo_i->rel_total_cost - fpinfo_i->rel_startup_cost;
 		run_cost += fpinfo_o->rel_total_cost - fpinfo_o->rel_startup_cost;
 		run_cost += nrows * join_cost.per_tuple;
 		nrows = clamp_row_est(nrows * fpinfo->joinclause_sel);
