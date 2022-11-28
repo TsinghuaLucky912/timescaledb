@@ -808,7 +808,7 @@ data_node_generate_pushdown_join_paths(PlannerInfo *root, RelOptInfo *joinrel, R
 	Cache *hcache = ts_hypertable_cache_pin();
 	Hypertable *ht = ts_hypertable_cache_get_entry(hcache, hyper_rte->relid, CACHE_FLAG_NONE);
 
-	Assert(NULL != ht);
+	Assert(ht != NULL);
 
 	/* Create the RelOptInfo for each data node */
 	data_node_rels = hyperrel->part_rels;
@@ -848,45 +848,58 @@ data_node_generate_pushdown_join_paths(PlannerInfo *root, RelOptInfo *joinrel, R
 		return;
 	}
 
-	fpinfo->innerrel = innerrel;
-	fpinfo->outerrel = outerrel;
-
 	ereport(DEBUG1, (errmsg("Pushdown join with reference table")));
-
-	/*
-	 * Compute the selectivity and cost of the local_conds, so we don't have
-	 * to do it over again for each path. The best we can do for these
-	 * conditions is to estimate selectivity on the basis of local statistics.
-	 * The local conditions are applied after the join has been computed on
-	 * the remote side like quals in WHERE clause, so pass jointype as
-	 * JOIN_INNER.
-	 */
-	fpinfo->local_conds_sel =
-		clauselist_selectivity(root, fpinfo->local_conds, 0, JOIN_INNER, NULL);
-	cost_qual_eval(&fpinfo->local_conds_cost, fpinfo->local_conds, root);
-
-	/*
-	 * If we are going to estimate costs locally, estimate the join clause
-	 * selectivity here while we have special join info.
-	 */
-	fpinfo->joinclause_sel =
-		clauselist_selectivity(root, fpinfo->joinclauses, 0, fpinfo->jointype, extra->sjinfo);
-
-	/* Estimate costs for bare join relation */
-	fdw_estimate_path_cost_size(root, joinrel, NIL, &rows, &width, &startup_cost, &total_cost);
-
-	/* Now update this information in the joinrel */
-	joinrel->rows = rows;
-	joinrel->reltarget->width = width;
-	fpinfo->rows = rows;
-	fpinfo->width = width;
-	fpinfo->startup_cost = startup_cost;
-	fpinfo->total_cost = total_cost;
 
 	for (int i = 0; i < ndata_node_rels; i++)
 	{
 		RelOptInfo *data_node_rel = data_node_rels[i];
 		Assert(data_node_rel);
+
+		fpinfo = fdw_relinfo_get(data_node_rel);
+		Assert(fpinfo != NULL);
+
+		/* Let the data node relation know about the join. Needs to be
+		 * set before we perform the cost estimation. */
+		fpinfo->innerrel = innerrel;
+		fpinfo->outerrel = outerrel;
+
+		/* Convert the data node relation into a supplier for a join. So, the
+		 * de-parser generates join statements instead of selections. */
+		data_node_rel->reloptkind = RELOPT_OTHER_JOINREL;
+
+		/*
+		 * Compute the selectivity and cost of the local_conds, so we don't have
+		 * to do it over again for each path. The best we can do for these
+		 * conditions is to estimate selectivity on the basis of local statistics.
+		 * The local conditions are applied after the join has been computed on
+		 * the remote side like quals in WHERE clause, so pass jointype as
+		 * JOIN_INNER.
+		 */
+		fpinfo->local_conds_sel =
+			clauselist_selectivity(root, fpinfo->local_conds, 0, JOIN_INNER, NULL);
+		cost_qual_eval(&fpinfo->local_conds_cost, fpinfo->local_conds, root);
+
+		/*
+		 * If we are going to estimate costs locally, estimate the join clause
+		 * selectivity here while we have special join info.
+		 */
+		fpinfo->joinclause_sel =
+			clauselist_selectivity(root, fpinfo->joinclauses, 0, fpinfo->jointype, extra->sjinfo);
+
+		/* Estimate costs for bare join relation */
+		fdw_estimate_path_cost_size(root,
+									data_node_rel,
+									NIL,
+									&rows,
+									&width,
+									&startup_cost,
+									&total_cost);
+
+		/* Now update this information in the joinrel */
+		fpinfo->rows = rows;
+		fpinfo->width = width;
+		fpinfo->startup_cost = startup_cost;
+		fpinfo->total_cost = total_cost;
 
 		/*
 		 * Create a new join path and add it to the joinrel which represents a
@@ -908,16 +921,6 @@ data_node_generate_pushdown_join_paths(PlannerInfo *root, RelOptInfo *joinrel, R
 		/* Discard any pre-existing paths; no further need for them */
 		data_node_rel->pathlist = NIL;
 		data_node_rel->partial_pathlist = NIL;
-
-		/* Let the data node relation know about the join */
-		fpinfo = fdw_relinfo_get(data_node_rel);
-		Assert(fpinfo != NULL);
-		fpinfo->innerrel = innerrel;
-		fpinfo->outerrel = outerrel;
-
-		/* Convert the data node relation into a supplier for a join. So, the
-		 * de-parser generates join statements instead of selections. */
-		data_node_rel->reloptkind = RELOPT_OTHER_JOINREL;
 
 		if (!bms_is_empty(fpinfo->sca->chunk_relids))
 		{
