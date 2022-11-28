@@ -106,6 +106,7 @@ CROSSMODULE_WRAPPER(data_node_alter);
 CROSSMODULE_WRAPPER(chunk_drop_replica);
 CROSSMODULE_WRAPPER(chunk_freeze_chunk);
 CROSSMODULE_WRAPPER(chunk_unfreeze_chunk);
+CROSSMODULE_WRAPPER(chunks_drop_stale);
 
 CROSSMODULE_WRAPPER(chunk_set_default_data_node);
 CROSSMODULE_WRAPPER(chunk_get_relstats);
@@ -386,6 +387,13 @@ update_compressed_chunk_relstats_default(Oid uncompressed_relid, Oid compressed_
 	error_no_default_fn_community();
 }
 
+static void
+dist_update_stale_chunk_metadata_default(Chunk *new_chunk, List *chunk_data_nodes)
+{
+	error_no_default_fn_community();
+	pg_unreachable();
+}
+
 TS_FUNCTION_INFO_V1(ts_tsl_loaded);
 
 PGDLLEXPORT Datum
@@ -520,6 +528,7 @@ TSDLLEXPORT CrossModuleFunctions ts_cm_functions_default = {
 	.chunk_drop_replica = error_no_default_fn_pg_community,
 	.chunk_freeze_chunk = error_no_default_fn_pg_community,
 	.chunk_unfreeze_chunk = error_no_default_fn_pg_community,
+	.chunks_drop_stale = error_no_default_fn_pg_community,
 	.hypertable_make_distributed = hypertable_make_distributed_default_fn,
 	.get_and_validate_data_node_list = get_and_validate_data_node_list_default_fn,
 	.timescaledb_fdw_handler = error_no_default_fn_pg_community,
@@ -539,6 +548,7 @@ TSDLLEXPORT CrossModuleFunctions ts_cm_functions_default = {
 	.dist_remote_chunk_info = error_no_default_fn_pg_community,
 	.dist_remote_compressed_chunk_info = error_no_default_fn_pg_community,
 	.dist_remote_hypertable_index_info = error_no_default_fn_pg_community,
+	.dist_update_stale_chunk_metadata = dist_update_stale_chunk_metadata_default,
 	.validate_as_data_node = error_no_default_fn_community,
 	.func_call_on_data_nodes = func_call_on_data_nodes_default,
 	.chunk_get_relstats = error_no_default_fn_pg_community,

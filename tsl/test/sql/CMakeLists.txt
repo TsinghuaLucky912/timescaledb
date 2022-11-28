@@ -81,10 +81,12 @@ if(CMAKE_BUILD_TYPE MATCHES Debug)
     dist_api_calls.sql
     dist_commands.sql
     dist_compression.sql
+    dist_copy_available_dns.sql
     dist_copy_format_long.sql
     dist_copy_long.sql
     dist_ddl.sql
     dist_join.sql
+    dist_cagg.sql
     dist_move_chunk.sql
     dist_policy.sql
     dist_util.sql
@@ -134,14 +136,6 @@ set(SOLO_TESTS
     remote_txn_resolve
     reorder
     telemetry_stats)
-
-# chunk_utils_internal creates a backup, drop the databases and restores the
-# backup. So, it should not run in parallel with other tests.
-if((${PG_VERSION_MAJOR} GREATER_EQUAL "14"))
-  if(CMAKE_BUILD_TYPE MATCHES Debug)
-    list(APPEND SOLO_TESTS chunk_utils_internal)
-  endif()
-endif()
 
 set(TEST_TEMPLATES
     compression_insert.sql.in cagg_union_view.sql.in plan_skip_scan.sql.in

@@ -391,15 +391,6 @@ CREATE FUNCTION @extschema@.alter_data_node(
 ) RETURNS TABLE(node_name NAME, host TEXT, port INTEGER, database NAME, available BOOLEAN)
 AS '@MODULE_PATHNAME@', 'ts_data_node_alter' LANGUAGE C VOLATILE;
 
--- Trigger that blocks modifications on frozen chunks
-CREATE OR REPLACE FUNCTION _timescaledb_internal.frozen_chunk_modify_blocker() RETURNS trigger
-   LANGUAGE plpgsql STRICT AS
-$BODY$
-BEGIN
-     RAISE EXCEPTION 'unable to modify frozen chunk %s', TG_TABLE_NAME;
-END;
-$BODY$ SET search_path TO pg_catalog, pg_temp;
-
 --
 -- Rebuild the catalog table `_timescaledb_catalog.continuous_agg`
 --
@@ -496,3 +487,10 @@ ALTER TABLE _timescaledb_catalog.continuous_agg_migrate_plan
         REFERENCES _timescaledb_catalog.continuous_agg (mat_hypertable_id);
 
 ANALYZE _timescaledb_catalog.continuous_agg;
+
+-- changes related to drop_stale_chunks()
+CREATE FUNCTION _timescaledb_internal.drop_stale_chunks(
+    node_name NAME,
+    chunks integer[] = NULL
+) RETURNS VOID
+AS '@MODULE_PATHNAME@', 'ts_chunks_drop_stale' LANGUAGE C VOLATILE;

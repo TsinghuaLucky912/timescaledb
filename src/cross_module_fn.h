@@ -188,6 +188,7 @@ typedef struct CrossModuleFunctions
 	PGFunction dist_remote_chunk_info;
 	PGFunction dist_remote_compressed_chunk_info;
 	PGFunction dist_remote_hypertable_index_info;
+	void (*dist_update_stale_chunk_metadata)(Chunk *new_chunk, List *chunk_data_nodes);
 	void (*validate_as_data_node)(void);
 	void (*func_call_on_data_nodes)(FunctionCallInfo fcinfo, List *data_node_oids);
 	PGFunction distributed_exec;
@@ -200,6 +201,7 @@ typedef struct CrossModuleFunctions
 	PGFunction chunk_drop_replica;
 	PGFunction chunk_freeze_chunk;
 	PGFunction chunk_unfreeze_chunk;
+	PGFunction chunks_drop_stale;
 	void (*update_compressed_chunk_relstats)(Oid uncompressed_relid, Oid compressed_relid);
 	CompressSingleRowState *(*compress_row_init)(int srcht_id, Relation in_rel, Relation out_rel);
 	TupleTableSlot *(*compress_row_exec)(CompressSingleRowState *cr, TupleTableSlot *slot);

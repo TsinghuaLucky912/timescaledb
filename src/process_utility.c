@@ -1082,6 +1082,17 @@ process_truncate(ProcessUtilityArgs *args)
 																		  TS_TIME_NOBEGIN,
 																		  TS_TIME_NOEND);
 
+						/* Additionally, this cagg's materialization hypertable could be the
+						 * underlying hypertable for other caggs defined on top of it, in that case
+						 * we must update the hypertable invalidation log */
+						ContinuousAggHypertableStatus agg_status;
+
+						agg_status = ts_continuous_agg_hypertable_status(mat_ht->fd.id);
+						if (agg_status & HypertableIsRawTable)
+							ts_cm_functions->continuous_agg_invalidate_raw_ht(mat_ht,
+																			  TS_TIME_NOBEGIN,
+																			  TS_TIME_NOEND);
+
 						/* mark list as changed because we'll add the materialization hypertable */
 						list_changed = true;
 					}
@@ -1139,6 +1150,14 @@ process_truncate(ProcessUtilityArgs *args)
 						ht = ts_hypertable_cache_get_entry(hcache,
 														   chunk->hypertable_relid,
 														   CACHE_FLAG_NONE);
+
+						/*
+						 * Block direct TRUNCATE on frozen chunk.
+						 */
+#if PG14_GE
+						if (ts_chunk_is_frozen(chunk))
+							elog(ERROR, "cannot TRUNCATE frozen chunk \"%s\"", get_rel_name(relid));
+#endif
 
 						Assert(ht != NULL);
 

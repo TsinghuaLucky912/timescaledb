@@ -308,8 +308,6 @@ GRANT SELECT ON _timescaledb_catalog.dimension TO PUBLIC;
 DROP INDEX _timescaledb_catalog.chunk_data_node_node_name_idx;
 DROP FUNCTION @extschema@.alter_data_node;
 
-DROP FUNCTION _timescaledb_internal.frozen_chunk_modify_blocker;
-
 --
 -- Prevent downgrading if there are hierarchical continuous aggregates
 --
@@ -429,3 +427,6 @@ ALTER TABLE _timescaledb_catalog.continuous_agg_migrate_plan
         REFERENCES _timescaledb_catalog.continuous_agg (mat_hypertable_id);
 
 ANALYZE _timescaledb_catalog.continuous_agg;
+
+-- changes related to drop_stale_chunks()
+DROP FUNCTION _timescaledb_internal.drop_stale_chunks;

@@ -135,7 +135,7 @@ extern TSDLLEXPORT int32 ts_hypertable_relid_to_id(Oid relid);
 extern TSDLLEXPORT Chunk *ts_hypertable_find_chunk_for_point(const Hypertable *h,
 															 const Point *point);
 extern TSDLLEXPORT Chunk *ts_hypertable_create_chunk_for_point(const Hypertable *h,
-															   const Point *point);
+															   const Point *point, bool *found);
 extern Oid ts_hypertable_relid(RangeVar *rv);
 extern TSDLLEXPORT bool ts_is_hypertable(Oid relid);
 extern bool ts_hypertable_has_tablespace(const Hypertable *ht, Oid tspc_oid);
@@ -143,7 +143,7 @@ extern Tablespace *ts_hypertable_select_tablespace(const Hypertable *ht, const C
 extern const char *ts_hypertable_select_tablespace_name(const Hypertable *ht, const Chunk *chunk);
 extern Tablespace *ts_hypertable_get_tablespace_at_offset_from(int32 hypertable_id,
 															   Oid tablespace_oid, int16 offset);
-extern bool ts_hypertable_has_chunks(Oid table_relid, LOCKMODE lockmode);
+extern TSDLLEXPORT bool ts_hypertable_has_chunks(Oid table_relid, LOCKMODE lockmode);
 extern void ts_hypertables_rename_schema_name(const char *old_name, const char *new_name);
 extern bool ts_is_partitioning_column(const Hypertable *ht, AttrNumber column_attno);
 extern TSDLLEXPORT bool ts_hypertable_set_compressed(Hypertable *ht,
