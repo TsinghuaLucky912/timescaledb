@@ -227,8 +227,11 @@ static void append_chunk_exclusion_condition(deparse_expr_cxt *context, bool use
 static void appendConditions(List *exprs, deparse_expr_cxt *context, bool is_first);
 static void deparseFromExprForRel(StringInfo buf, PlannerInfo *root, RelOptInfo *foreignrel,
 								  bool use_alias, Index ignore_rel, List **ignore_conds,
-								  List **params_list);
+								  List **params_list, DataNodeChunkAssignment *sca);
 static void deparseFromExpr(List *quals, deparse_expr_cxt *context);
+static void deparseRangeTblRef(StringInfo buf, PlannerInfo *root, RelOptInfo *foreignrel,
+							   bool make_subquery, Index ignore_rel, List **ignore_conds,
+							   List **params_list, DataNodeChunkAssignment *sca);
 static void deparseAggref(Aggref *node, deparse_expr_cxt *context);
 static void appendGroupByClause(List *tlist, deparse_expr_cxt *context);
 static void appendAggOrderBy(List *orderList, List *targetList, deparse_expr_cxt *context);
@@ -1124,7 +1127,8 @@ deparseFromExpr(List *quals, deparse_expr_cxt *context)
 						  use_alias,
 						  (Index) 0,
 						  NULL,
-						  context->params_list);
+						  context->params_list,
+						  context->sca);
 
 	/* Construct WHERE clause */
 	if (quals != NIL || context->sca != NULL)
@@ -1487,27 +1491,108 @@ get_jointype_name(JoinType jointype)
  */
 static void
 deparseFromExprForRel(StringInfo buf, PlannerInfo *root, RelOptInfo *foreignrel, bool use_alias,
-					  Index ignore_rel, List **ignore_conds, List **params_list)
+					  Index ignore_rel, List **ignore_conds, List **params_list,
+					  DataNodeChunkAssignment *sca)
 {
+	TsFdwRelInfo *fpinfo = fdw_relinfo_get(foreignrel);
+
 	if (IS_JOIN_REL(foreignrel))
 	{
-		TsFdwRelInfo *fpinfo = fdw_relinfo_get(foreignrel);
 		StringInfoData join_sql_o;
 		StringInfoData join_sql_i;
 		RelOptInfo *outerrel = fpinfo->outerrel;
 		RelOptInfo *innerrel = fpinfo->innerrel;
+		bool outerrel_is_target = false;
+		bool innerrel_is_target = false;
 
-		// Outer Rel
-		RangeTblEntry *rte = planner_rt_fetch(outerrel->relid, root);
-		Relation rel = table_open(rte->relid, NoLock);
-		initStringInfo(&join_sql_o);
-		deparseRelation(&join_sql_o, rel);
+		if (ignore_rel > 0 && bms_is_member(ignore_rel, foreignrel->relids))
+		{
+			/*
+			 * If this is an inner join, add joinclauses to *ignore_conds and
+			 * set it to empty so that those can be deparsed into the WHERE
+			 * clause.  Note that since the target relation can never be
+			 * within the nullable side of an outer join, those could safely
+			 * be pulled up into the WHERE clause (see foreign_join_ok()).
+			 * Note also that since the target relation is only inner-joined
+			 * to any other relation in the query, all conditions in the join
+			 * tree mentioning the target relation could be deparsed into the
+			 * WHERE clause by doing this recursively.
+			 */
+			if (fpinfo->jointype == JOIN_INNER)
+			{
+				*ignore_conds = list_concat(*ignore_conds, fpinfo->joinclauses);
+				fpinfo->joinclauses = NIL;
+			}
 
-		// Inner Rel
-		rte = planner_rt_fetch(innerrel->relid, root);
-		rel = table_open(rte->relid, NoLock);
-		initStringInfo(&join_sql_i);
-		deparseRelation(&join_sql_i, rel);
+			/*
+			 * Check if either of the input relations is the target relation.
+			 */
+			if (outerrel->relid == ignore_rel)
+				outerrel_is_target = true;
+			else if (innerrel->relid == ignore_rel)
+				innerrel_is_target = true;
+		}
+
+		/* Deparse outer relation if not the target relation. */
+		if (!outerrel_is_target)
+		{
+			initStringInfo(&join_sql_o);
+			deparseRangeTblRef(&join_sql_o,
+							   root,
+							   outerrel,
+							   fpinfo->make_outerrel_subquery,
+							   ignore_rel,
+							   ignore_conds,
+							   params_list,
+							   sca);
+
+			/*
+			 * If inner relation is the target relation, skip deparsing it.
+			 * Note that since the join of the target relation with any other
+			 * relation in the query is an inner join and can never be within
+			 * the nullable side of an outer join, the join could be
+			 * interchanged with higher-level joins (cf. identity 1 on outer
+			 * join reordering shown in src/backend/optimizer/README), which
+			 * means it's safe to skip the target-relation deparsing here.
+			 */
+			if (innerrel_is_target)
+			{
+				Assert(fpinfo->jointype == JOIN_INNER);
+				Assert(fpinfo->joinclauses == NIL);
+				appendBinaryStringInfo(buf, join_sql_o.data, join_sql_o.len);
+				return;
+			}
+		}
+
+		/* Deparse inner relation if not the target relation. */
+		if (!innerrel_is_target)
+		{
+			initStringInfo(&join_sql_i);
+			deparseRangeTblRef(&join_sql_i,
+							   root,
+							   innerrel,
+							   fpinfo->make_innerrel_subquery,
+							   ignore_rel,
+							   ignore_conds,
+							   params_list,
+							   sca);
+
+			/*
+			 * If outer relation is the target relation, skip deparsing it.
+			 * See the above note about safety.
+			 */
+			if (outerrel_is_target)
+			{
+				Assert(fpinfo->jointype == JOIN_INNER);
+				Assert(fpinfo->joinclauses == NIL);
+				appendBinaryStringInfo(buf, join_sql_i.data, join_sql_i.len);
+				return;
+			}
+		}
+
+		/* Neither of the relations is the target relation. */
+		Assert(!outerrel_is_target && !innerrel_is_target);
+
 		/*
 		 * For a join relation FROM clause entry is deparsed as
 		 *
@@ -1536,6 +1621,9 @@ deparseFromExprForRel(StringInfo buf, PlannerInfo *root, RelOptInfo *foreignrel,
 		}
 		else
 			appendStringInfoString(buf, "(TRUE)");
+
+		/* End the FROM clause entry. */
+		appendStringInfoChar(buf, ')');
 	}
 	else
 	{
@@ -1559,6 +1647,84 @@ deparseFromExprForRel(StringInfo buf, PlannerInfo *root, RelOptInfo *foreignrel,
 
 		table_close(rel, NoLock);
 	}
+}
+
+/*
+ * Append FROM clause entry for the given relation into buf.
+ */
+static void
+deparseRangeTblRef(StringInfo buf, PlannerInfo *root, RelOptInfo *foreignrel, bool make_subquery,
+				   Index ignore_rel, List **ignore_conds, List **params_list,
+				   DataNodeChunkAssignment *sca)
+{
+	TsFdwRelInfo *fpinfo = fdw_relinfo_get(foreignrel);
+
+	/* Should only be called in these cases. */
+	Assert(IS_SIMPLE_REL(foreignrel) || IS_JOIN_REL(foreignrel));
+
+	Assert(fpinfo->local_conds == NIL);
+
+	/* If make_subquery is true, deparse the relation as a subquery. */
+	if (make_subquery)
+	{
+		List *retrieved_attrs;
+		int ncols;
+
+		/*
+		 * The given relation shouldn't contain the target relation, because
+		 * this should only happen for input relations for a full join, and
+		 * such relations can never contain an UPDATE/DELETE target.
+		 */
+		Assert(ignore_rel == 0 || !bms_is_member(ignore_rel, foreignrel->relids));
+
+		/* Deparse the subquery representing the relation. */
+		appendStringInfoChar(buf, '(');
+		deparseSelectStmtForRel(buf,
+								root,
+								foreignrel,
+								NIL,
+								fpinfo->remote_conds,
+								NIL /* remote_having */,
+								NIL /* pathkeys */,
+								true /* is_subquery */,
+								&retrieved_attrs,
+								params_list,
+								sca);
+		appendStringInfoChar(buf, ')');
+
+		/* Append the relation alias. */
+		appendStringInfo(buf, " %s%d", SUBQUERY_REL_ALIAS_PREFIX, fpinfo->relation_index);
+
+		/*
+		 * Append the column aliases if needed.  Note that the subquery emits
+		 * expressions specified in the relation's reltarget (see
+		 * deparseSubqueryTargetList).
+		 */
+		ncols = list_length(foreignrel->reltarget->exprs);
+		if (ncols > 0)
+		{
+			int i;
+
+			appendStringInfoChar(buf, '(');
+			for (i = 1; i <= ncols; i++)
+			{
+				if (i > 1)
+					appendStringInfoString(buf, ", ");
+
+				appendStringInfo(buf, "%s%d", SUBQUERY_COL_ALIAS_PREFIX, i);
+			}
+			appendStringInfoChar(buf, ')');
+		}
+	}
+	else
+		deparseFromExprForRel(buf,
+							  root,
+							  foreignrel,
+							  true,
+							  ignore_rel,
+							  ignore_conds,
+							  params_list,
+							  sca);
 }
 
 /*

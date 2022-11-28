@@ -93,6 +93,7 @@ TsFdwRelInfo *
 fdw_relinfo_get(RelOptInfo *rel)
 {
 	TimescaleDBPrivate *rel_private = rel->fdw_private;
+	Assert(rel_private);
 	TsFdwRelInfo *fdw_relation_info = rel_private->fdw_relation_info;
 
 	/*
@@ -396,6 +397,9 @@ fdw_relinfo_create(PlannerInfo *root, RelOptInfo *rel, Oid server_oid, Oid local
 	Assert(fpinfo->type == TS_FDW_RELINFO_UNINITIALIZED || fpinfo->type == type);
 	fpinfo->type = type;
 
+	if (type == TS_FDW_RELINFO_UNINITIALIZED)
+		return fpinfo;
+
 	/*
 	 * Set the name of relation in fpinfo, while we are constructing it here.
 	 * It will be used to build the string describing the join relation in
@@ -427,7 +431,11 @@ fdw_relinfo_create(PlannerInfo *root, RelOptInfo *rel, Oid server_oid, Oid local
 	fpinfo->pushdown_safe = true;
 
 	/* Look up foreign-table catalog info. */
-	fpinfo->server = GetForeignServer(server_oid);
+	if (OidIsValid(server_oid))
+	{
+		fpinfo->server = GetForeignServer(server_oid);
+		apply_fdw_and_server_options(fpinfo);
+	}
 
 	/*
 	 * Extract user-settable option values.  Note that per-table setting
@@ -437,8 +445,6 @@ fdw_relinfo_create(PlannerInfo *root, RelOptInfo *rel, Oid server_oid, Oid local
 	fpinfo->fdw_tuple_cost = DEFAULT_FDW_TUPLE_COST;
 	fpinfo->shippable_extensions = list_make1_oid(ts_extension_get_oid());
 	fpinfo->fetch_size = DEFAULT_FDW_FETCH_SIZE;
-
-	apply_fdw_and_server_options(fpinfo);
 
 	/*
 	 * Identify which baserestrictinfo clauses can be sent to the data

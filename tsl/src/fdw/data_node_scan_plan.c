@@ -824,14 +824,13 @@ data_node_generate_pushdown_join_paths(PlannerInfo *root, RelOptInfo *joinrel, R
 	 * if found safe. Once we know that this join can be pushed down, we fill
 	 * the entry.
 	 */
-	fpinfo = (TsFdwRelInfo *) palloc0(sizeof(TsFdwRelInfo));
-	TimescaleDBPrivate *timescaledbDBrivate =
-		(TimescaleDBPrivate *) palloc0(sizeof(TimescaleDBPrivate));
-	timescaledbDBrivate->fdw_relation_info = fpinfo;
-	fpinfo->pushdown_safe = false;
-	joinrel->fdw_private = timescaledbDBrivate;
+	fpinfo =
+		fdw_relinfo_create(root, joinrel, InvalidOid, InvalidOid, TS_FDW_RELINFO_UNINITIALIZED);
+	Assert(fpinfo->type == TS_FDW_RELINFO_UNINITIALIZED);
+
 	/* attrs_used is only for base relations. */
 	fpinfo->attrs_used = NULL;
+	fpinfo->pushdown_safe = false;
 
 	/*
 	 * We need the FDW information to get retrieve the information about the
@@ -849,6 +848,12 @@ data_node_generate_pushdown_join_paths(PlannerInfo *root, RelOptInfo *joinrel, R
 	}
 
 	ereport(DEBUG1, (errmsg("Pushdown join with reference table")));
+
+	/* Populate innerrel fdw_private (needed for deparsing) */
+	Assert(innerrel->fdw_private == NULL);
+	fpinfo =
+		fdw_relinfo_create(root, innerrel, InvalidOid, InvalidOid, TS_FDW_RELINFO_REFJOIN_TABLE);
+	Assert(fpinfo->type == TS_FDW_RELINFO_REFJOIN_TABLE);
 
 	for (int i = 0; i < ndata_node_rels; i++)
 	{
