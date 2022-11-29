@@ -888,6 +888,14 @@ data_node_generate_pushdown_join_paths(PlannerInfo *root, RelOptInfo *joinrel, R
 		data_node_rel->reloptkind = RELOPT_OTHER_JOINREL;
 		data_node_rel->relids = bms_add_members(data_node_rel->relids, innerrel->relids);
 
+		/* Adjust join target expression list */
+		AppendRelInfo *appinfo = root->append_rel_array[data_node_rel->relid];
+		Assert(appinfo != NULL);
+		Assert(joinrel->reltarget->exprs != NULL);
+		data_node_rel->reltarget->exprs =
+			castNode(List,
+					 adjust_appendrel_attrs(root, (Node *) joinrel->reltarget->exprs, 1, &appinfo));
+
 		/*
 		 * Compute the selectivity and cost of the local_conds, so we don't have
 		 * to do it over again for each path. The best we can do for these
