@@ -238,6 +238,7 @@ static void appendAggOrderBy(List *orderList, List *targetList, deparse_expr_cxt
 static void appendFunctionName(Oid funcid, deparse_expr_cxt *context);
 static Node *deparseSortGroupClause(Index ref, List *tlist, bool force_colno,
 									deparse_expr_cxt *context);
+static bool column_quallification_needed(deparse_expr_cxt *context);
 
 /*
  * Helper functions
@@ -1114,7 +1115,7 @@ deparseFromExpr(List *quals, deparse_expr_cxt *context)
 	StringInfo buf = context->buf;
 	RelOptInfo *scanrel = context->scanrel;
 	/* Use alias if scan is on multiple rels, unless a per-data node scan */
-	bool use_alias = (bms_membership(scanrel->relids) == BMS_MULTIPLE) && context->sca == NULL;
+	bool use_alias = column_quallification_needed(context);
 
 	/* For upper relations, scanrel must be either a joinrel or a baserel */
 	Assert(!IS_UPPER_REL(context->foreignrel) || IS_JOIN_REL(scanrel) || IS_SIMPLE_REL(scanrel));
@@ -2368,6 +2369,26 @@ deparseExpr(Expr *node, deparse_expr_cxt *context)
 }
 
 /*
+ * Is it requeired to qualify the column name (e.g., multiple
+ * tables are part of the query).
+ */
+static bool
+column_quallification_needed(deparse_expr_cxt *context)
+{
+	Relids relids = context->scanrel->relids;
+
+	if (bms_membership(relids) == BMS_MULTIPLE)
+	{
+		if (IS_JOIN_REL(context->scanrel))
+			return true;
+		else if (context->sca == NULL)
+			return true;
+	}
+
+	return false;
+}
+
+/*
  * Deparse given Var node into context->buf.
  *
  * If the Var belongs to the foreign relation, just print its remote name.
@@ -2384,7 +2405,7 @@ deparseVar(Var *node, deparse_expr_cxt *context)
 
 	/* Qualify columns when multiple relations are involved, unless it is a
 	 * per-data node scan or a join. */
-	bool qualify_col = false;
+	bool qualify_col = column_quallification_needed(context);
 
 	if (bms_membership(relids) == BMS_MULTIPLE)
 	{
