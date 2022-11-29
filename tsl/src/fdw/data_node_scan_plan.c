@@ -863,14 +863,20 @@ data_node_generate_pushdown_join_paths(PlannerInfo *root, RelOptInfo *joinrel, R
 		fpinfo = fdw_relinfo_get(data_node_rel);
 		Assert(fpinfo != NULL);
 
+		/* Copy reloptinfo. This is needed because we need two relopt infos for the partition. One
+		 * as the join result and one as the input relation of the partition. */
+		RelOptInfo *outer_rel_part = palloc(sizeof(RelOptInfo));
+		memcpy(outer_rel_part, data_node_rel, sizeof(RelOptInfo));
+
 		/* Let the data node relation know about the join. Needs to be
 		 * set before we perform the cost estimation. */
-		fpinfo->innerrel = innerrel;
-		fpinfo->outerrel = outerrel;
+		fpinfo->outerrel = outer_rel_part; /* hypertable */
+		fpinfo->innerrel = innerrel;	   /* ref join table */
 
 		/* Convert the data node relation into a supplier for a join. So, the
 		 * de-parser generates join statements instead of selections. */
 		data_node_rel->reloptkind = RELOPT_OTHER_JOINREL;
+		data_node_rel->relids = bms_add_members(data_node_rel->relids, innerrel->relids);
 
 		/*
 		 * Compute the selectivity and cost of the local_conds, so we don't have

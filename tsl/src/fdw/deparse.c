@@ -1114,7 +1114,7 @@ deparseFromExpr(List *quals, deparse_expr_cxt *context)
 	StringInfo buf = context->buf;
 	RelOptInfo *scanrel = context->scanrel;
 	/* Use alias if scan is on multiple rels, unless a per-data node scan */
-	bool use_alias = bms_num_members(scanrel->relids) > 1 && context->sca == NULL;
+	bool use_alias = (bms_membership(scanrel->relids) == BMS_MULTIPLE) && context->sca == NULL;
 
 	/* For upper relations, scanrel must be either a joinrel or a baserel */
 	Assert(!IS_UPPER_REL(context->foreignrel) || IS_JOIN_REL(scanrel) || IS_SIMPLE_REL(scanrel));
@@ -1289,7 +1289,7 @@ deparseLockingClause(deparse_expr_cxt *context)
 				}
 
 				/* Add the relation alias if we are here for a join relation */
-				if (bms_num_members(rel->relids) > 1 && rc->strength != LCS_NONE)
+				if (bms_membership(rel->relids) == BMS_MULTIPLE && rc->strength != LCS_NONE)
 					appendStringInfo(buf, " OF %s%d", REL_ALIAS_PREFIX, relid);
 			}
 		}
@@ -2383,8 +2383,16 @@ deparseVar(Var *node, deparse_expr_cxt *context)
 	int colno;
 
 	/* Qualify columns when multiple relations are involved, unless it is a
-	 * per-data node scan. */
-	bool qualify_col = (bms_num_members(relids) > 1 && context->sca == NULL);
+	 * per-data node scan or a join. */
+	bool qualify_col = false;
+
+	if (bms_membership(relids) == BMS_MULTIPLE)
+	{
+		if (IS_JOIN_REL(context->scanrel))
+			qualify_col = true;
+		else if (context->sca == NULL)
+			qualify_col = true;
+	}
 
 	/*
 	 * If the Var belongs to the foreign relation that is deparsed as a
