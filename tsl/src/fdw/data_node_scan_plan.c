@@ -786,14 +786,14 @@ data_node_generate_pushdown_join_paths(PlannerInfo *root, RelOptInfo *joinrel, R
 	Bitmapset *data_node_live_rels = NULL;
 #endif
 
-	/* Left table has to be distibuted */
-	Assert(outerrel->fdw_private != NULL);
-
 	/*
 	 * Skip if this join combination has been considered already.
 	 */
 	if (joinrel->fdw_private)
 		return;
+
+	/* Outer relation has to be distibuted */
+	Ensure(outerrel->fdw_private != NULL, "the outer relation has to be distributed");
 
 	/*
 	 * This code does not work for joins with lateral references, since those
@@ -802,10 +802,13 @@ data_node_generate_pushdown_join_paths(PlannerInfo *root, RelOptInfo *joinrel, R
 	if (!bms_is_empty(joinrel->lateral_relids))
 		return;
 
+	/* Join pushdown only works if the data node rels are created in
+	 * data_node_scan_add_node_paths during scan planning. */
 	if (!ts_guc_enable_per_data_node_queries)
 		ereport(DEBUG1,
 				(errmsg("enable_per_data_node_queries needs to be enabled to pushdown joins")));
 
+	/* Get the hypertable is from the outer relation. */
 	Oid hypertable_relid = ts_hypertable_id_to_relid(outerrel->relid);
 	Ensure(OidIsValid(hypertable_relid),
 		   "unable to get valid relid for hypertable %d",
@@ -861,6 +864,7 @@ data_node_generate_pushdown_join_paths(PlannerInfo *root, RelOptInfo *joinrel, R
 		fdw_relinfo_create(root, innerrel, InvalidOid, InvalidOid, TS_FDW_RELINFO_REFJOIN_TABLE);
 	Assert(fpinfo->type == TS_FDW_RELINFO_REFJOIN_TABLE);
 
+	/* Create join paths and cost estimations per data node. */
 	for (int i = 0; i < ndata_node_rels; i++)
 	{
 		RelOptInfo *data_node_rel = data_node_rels[i];
@@ -960,8 +964,7 @@ data_node_generate_pushdown_join_paths(PlannerInfo *root, RelOptInfo *joinrel, R
 		fdw_add_paths_with_pathkeys_for_rel(root,
 											data_node_rel,
 											epq_path,
-											data_node_scan_path_create); // TODO: Is the last
-																		 // parameter correct?
+											data_node_scan_path_create);
 	}
 
 	Assert(list_length(data_node_rels_list) > 0);

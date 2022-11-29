@@ -92,3 +92,4 @@ and name like 'cpu%'
 and ts between '2022-02-02 02:02:02+03' and '2022-02-02 02:12:02+03'
 group by name;
 
+-- Tests with aliases 
