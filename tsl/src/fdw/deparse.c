@@ -2407,14 +2407,6 @@ deparseVar(Var *node, deparse_expr_cxt *context)
 	 * per-data node scan or a join. */
 	bool qualify_col = column_qualification_needed(context);
 
-	if (bms_membership(relids) == BMS_MULTIPLE)
-	{
-		if (IS_JOIN_REL(context->scanrel))
-			qualify_col = true;
-		else if (context->sca == NULL)
-			qualify_col = true;
-	}
-
 	/*
 	 * If the Var belongs to the foreign relation that is deparsed as a
 	 * subquery, use the relation and column alias to the Var provided by the
