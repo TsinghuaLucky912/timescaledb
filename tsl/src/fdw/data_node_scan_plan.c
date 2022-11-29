@@ -46,6 +46,7 @@
 #include "estimate.h"
 #include "planner/planner.h"
 #include "chunk.h"
+#include "debug_assert.h"
 
 /*
  * DataNodeScan is a custom scan implementation for scanning hypertables on
@@ -763,6 +764,9 @@ is_safe_to_pushdown_reftable_join(PlannerInfo *root, TsFdwRelInfo *fpinfo)
 	return true;
 }
 
+/*
+ * The hyperrel is the outer rel
+ */
 void
 data_node_generate_pushdown_join_paths(PlannerInfo *root, RelOptInfo *joinrel, RelOptInfo *outerrel,
 									   RelOptInfo *innerrel, JoinType jointype,
@@ -802,17 +806,19 @@ data_node_generate_pushdown_join_paths(PlannerInfo *root, RelOptInfo *joinrel, R
 		ereport(DEBUG1,
 				(errmsg("enable_per_data_node_queries needs to be enabled to pushdown joins")));
 
-	RelOptInfo *hyperrel = root->simple_rel_array[1];	  // TODO: Fixme, make dynamic
-	RangeTblEntry *hyper_rte = root->simple_rte_array[1]; // TODO: Fixme, make dynamic
+	Oid hypertable_relid = ts_hypertable_id_to_relid(outerrel->relid);
+	Ensure(OidIsValid(hypertable_relid),
+		   "unable to get valid relid for hypertable %d",
+		   outerrel->relid);
 
 	Cache *hcache = ts_hypertable_cache_pin();
-	Hypertable *ht = ts_hypertable_cache_get_entry(hcache, hyper_rte->relid, CACHE_FLAG_NONE);
+	Hypertable *ht = ts_hypertable_cache_get_entry(hcache, hypertable_relid, CACHE_FLAG_NONE);
 
 	Assert(ht != NULL);
 
 	/* Create the RelOptInfo for each data node */
-	data_node_rels = hyperrel->part_rels;
-	ndata_node_rels = hyperrel->nparts;
+	data_node_rels = outerrel->part_rels;
+	ndata_node_rels = outerrel->nparts;
 
 	Assert(ndata_node_rels > 0);
 	Assert(data_node_rels != NULL);
