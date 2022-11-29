@@ -238,7 +238,7 @@ static void appendAggOrderBy(List *orderList, List *targetList, deparse_expr_cxt
 static void appendFunctionName(Oid funcid, deparse_expr_cxt *context);
 static Node *deparseSortGroupClause(Index ref, List *tlist, bool force_colno,
 									deparse_expr_cxt *context);
-static bool column_quallification_needed(deparse_expr_cxt *context);
+static bool column_qualification_needed(deparse_expr_cxt *context);
 
 /*
  * Helper functions
@@ -1115,7 +1115,7 @@ deparseFromExpr(List *quals, deparse_expr_cxt *context)
 	StringInfo buf = context->buf;
 	RelOptInfo *scanrel = context->scanrel;
 	/* Use alias if scan is on multiple rels, unless a per-data node scan */
-	bool use_alias = column_quallification_needed(context);
+	bool use_alias = column_qualification_needed(context);
 
 	/* For upper relations, scanrel must be either a joinrel or a baserel */
 	Assert(!IS_UPPER_REL(context->foreignrel) || IS_JOIN_REL(scanrel) || IS_SIMPLE_REL(scanrel));
@@ -2373,7 +2373,7 @@ deparseExpr(Expr *node, deparse_expr_cxt *context)
  * tables are part of the query).
  */
 static bool
-column_quallification_needed(deparse_expr_cxt *context)
+column_qualification_needed(deparse_expr_cxt *context)
 {
 	Relids relids = context->scanrel->relids;
 
@@ -2405,7 +2405,7 @@ deparseVar(Var *node, deparse_expr_cxt *context)
 
 	/* Qualify columns when multiple relations are involved, unless it is a
 	 * per-data node scan or a join. */
-	bool qualify_col = column_quallification_needed(context);
+	bool qualify_col = column_qualification_needed(context);
 
 	if (bms_membership(relids) == BMS_MULTIPLE)
 	{
