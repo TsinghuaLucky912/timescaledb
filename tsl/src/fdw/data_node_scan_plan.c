@@ -851,49 +851,46 @@ fdw_pushdown_foreign_join(PlannerInfo *root, RelOptInfo *joinrel, JoinType joint
 
 	/* Save the join clauses, for later use. */
 	fpinfo->joinclauses = joinclauses;
-	return true;
 
-	// /*
-	//  * deparseExplicitTargetList() isn't smart enough to handle anything other
-	//  * than a Var.  In particular, if there's some PlaceHolderVar that would
-	//  * need to be evaluated within this join tree (because there's an upper
-	//  * reference to a quantity that may go to NULL as a result of an outer
-	//  * join), then we can't try to push the join down because we'll fail when
-	//  * we get to deparseExplicitTargetList().  However, a PlaceHolderVar that
-	//  * needs to be evaluated *at the top* of this join tree is OK, because we
-	//  * can do that locally after fetching the results from the remote side.
-	//  */
-	// foreach (lc, root->placeholder_list)
-	// {
-	// 	PlaceHolderInfo *phinfo = lfirst(lc);
-	// 	Relids relids;
+	/*
+	 * deparseExplicitTargetList() isn't smart enough to handle anything other
+	 * than a Var.  In particular, if there's some PlaceHolderVar that would
+	 * need to be evaluated within this join tree (because there's an upper
+	 * reference to a quantity that may go to NULL as a result of an outer
+	 * join), then we can't try to push the join down because we'll fail when
+	 * we get to deparseExplicitTargetList().  However, a PlaceHolderVar that
+	 * needs to be evaluated *at the top* of this join tree is OK, because we
+	 * can do that locally after fetching the results from the remote side.
+	 */
+	foreach (lc, root->placeholder_list)
+	{
+		PlaceHolderInfo *phinfo = lfirst(lc);
+		Relids relids;
 
-	// 	/* PlaceHolderInfo refers to parent relids, not child relids. */
-	// 	relids = IS_OTHER_REL(joinrel) ? joinrel->top_parent_relids : joinrel->relids;
+		/* PlaceHolderInfo refers to parent relids, not child relids. */
+		relids = IS_OTHER_REL(joinrel) ? joinrel->top_parent_relids : joinrel->relids;
 
-	// 	if (bms_is_subset(phinfo->ph_eval_at, relids) &&
-	// 		bms_nonempty_difference(relids, phinfo->ph_eval_at))
-	// 		return false;
-	// }
+		if (bms_is_subset(phinfo->ph_eval_at, relids) &&
+			bms_nonempty_difference(relids, phinfo->ph_eval_at))
+			return false;
+	}
 
+	fpinfo->outerrel = outerrel;
+	fpinfo->innerrel = innerrel;
+	fpinfo->jointype = jointype;
 
-
-	// fpinfo->outerrel = outerrel;
-	// fpinfo->innerrel = innerrel;
-	// fpinfo->jointype = jointype;
-
-	// /*
-	//  * By default, both the input relations are not required to be deparsed as
-	//  * subqueries, but there might be some relations covered by the input
-	//  * relations that are required to be deparsed as subqueries, so save the
-	//  * relids of those relations for later use by the deparser.
-	//  */
-	// fpinfo->make_outerrel_subquery = false;
-	// fpinfo->make_innerrel_subquery = false;
-	// Assert(bms_is_subset(fpinfo_o->lower_subquery_rels, outerrel->relids));
-	// Assert(bms_is_subset(fpinfo_i->lower_subquery_rels, innerrel->relids));
-	// fpinfo->lower_subquery_rels =
-	// 	bms_union(fpinfo_o->lower_subquery_rels, fpinfo_i->lower_subquery_rels);
+	/*
+	 * By default, both the input relations are not required to be deparsed as
+	 * subqueries, but there might be some relations covered by the input
+	 * relations that are required to be deparsed as subqueries, so save the
+	 * relids of those relations for later use by the deparser.
+	 */
+	fpinfo->make_outerrel_subquery = false;
+	fpinfo->make_innerrel_subquery = false;
+	Assert(bms_is_subset(fpinfo_o->lower_subquery_rels, outerrel->relids));
+	Assert(bms_is_subset(fpinfo_i->lower_subquery_rels, innerrel->relids));
+	fpinfo->lower_subquery_rels =
+		bms_union(fpinfo_o->lower_subquery_rels, fpinfo_i->lower_subquery_rels);
 
 	/*
 	 * Pull the other remote conditions from the joining relations into join
@@ -971,17 +968,8 @@ fdw_pushdown_foreign_join(PlannerInfo *root, RelOptInfo *joinrel, JoinType joint
 		fpinfo->joinclauses = fpinfo->remote_conds;
 		fpinfo->remote_conds = NIL;
 	}
-
 	/* Mark that this join can be pushed down safely */
 	fpinfo->pushdown_safe = true;
-
-	/*
-	 * Set # of retrieved rows and cached relation costs to some negative
-	 * value, so that we can detect when they are set to some sensible values,
-	 * during one (usually the first) of the calls to estimate_path_cost_size.
-	 */
-	fpinfo->rel_startup_cost = -1;
-	fpinfo->rel_total_cost = -1;
 
 	/*
 	 * Set the string describing this join relation to be used in EXPLAIN
@@ -996,26 +984,15 @@ fdw_pushdown_foreign_join(PlannerInfo *root, RelOptInfo *joinrel, JoinType joint
 					 get_jointype_name(fpinfo->jointype),
 					 fpinfo_i->relation_name->data);
 
-	// /*
-	//  * Set the relation index.  This is defined as the position of this
-	//  * joinrel in the join_rel_list list plus the length of the rtable list.
-	//  * Note that since this joinrel is at the end of the join_rel_list list
-	//  * when we are called, we can get the position by list_length.
-	//  */
-	// // Assert(fpinfo->relation_index == 0); /* shouldn't be set yet */
-	// fpinfo->relation_index = list_length(root->parse->rtable) + list_length(root->join_rel_list);
+	/*
+	 * Set the relation index.  This is defined as the position of this
+	 * joinrel in the join_rel_list list plus the length of the rtable list.
+	 * Note that since this joinrel is at the end of the join_rel_list list
+	 * when we are called, we can get the position by list_length.
+	 */
+	fpinfo->relation_index = list_length(root->parse->rtable) + list_length(root->join_rel_list);
 
 	return true;
-}
-
-char *bms_to_char(const Bitmapset *bms);
-
-char *
-bms_to_char(const Bitmapset *bms)
-{
-	StringInfo str = makeStringInfo();
-	outBitmapset(str, bms);
-	return str->data;
 }
 
 /*
@@ -1132,11 +1109,6 @@ data_node_generate_pushdown_join_paths(PlannerInfo *root, RelOptInfo *joinrel, R
 		RelOptInfo *outer_rel_part = palloc(sizeof(RelOptInfo));
 		memcpy(outer_rel_part, data_node_rel, sizeof(RelOptInfo));
 
-		/* Let the data node relation know about the join. Needs to be
-		 * set before we perform the cost estimation. */
-		fpinfo->outerrel = outer_rel_part; /* hypertable */
-		fpinfo->innerrel = innerrel;	   /* ref join table */
-
 		/* Convert the data node relation into a supplier for a join. So, the
 		 * de-parser generates join statements instead of selections. */
 		data_node_rel->reloptkind = RELOPT_OTHER_JOINREL;
@@ -1150,12 +1122,14 @@ data_node_generate_pushdown_join_paths(PlannerInfo *root, RelOptInfo *joinrel, R
 			castNode(List,
 					 adjust_appendrel_attrs(root, (Node *) joinrel->reltarget->exprs, 1, &appinfo));
 
-
-		JoinPathExtraData* partition_extra = palloc(sizeof(JoinPathExtraData));
+		JoinPathExtraData *partition_extra = palloc(sizeof(JoinPathExtraData));
 		memcpy(partition_extra, extra, sizeof(JoinPathExtraData));
 		partition_extra->restrictlist =
 			castNode(List,
-					 adjust_appendrel_attrs(root, (Node *) partition_extra->restrictlist, 1, &appinfo));
+					 adjust_appendrel_attrs(root,
+											(Node *) partition_extra->restrictlist,
+											1,
+											&appinfo));
 
 		/* Pushdown the join expressions */
 		bool join_pushdown = fdw_pushdown_foreign_join(root,
