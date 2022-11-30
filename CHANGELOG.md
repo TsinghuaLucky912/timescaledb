@@ -53,7 +53,7 @@ This release also includes several bug fixes.
 * #4941 Restrict usage of the old format (pre 2.7) of continuous aggregates in PostgreSQL 15.
 * #4955 Fix cagg migration for hypertables using timestamp without timezone
 * #4968 Check for interrupts in gapfill main loop
-* #4988 Fix cagg migration crash
+* #4988 Fix cagg migration crash when refreshing the newly created cagg
 
 **Thanks**
 * @jflambert for reporting a crash with nested user-defined functions.
