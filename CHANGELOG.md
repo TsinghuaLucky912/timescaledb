@@ -11,8 +11,7 @@ We deem it moderate priority for upgrading.
 This release includes these noteworthy features:
 * Hierarchical Continuous Aggregates (aka Continuous Aggregate on top of another Continuous Aggregate)
 * Improve `time_bucket_gapfill` function allowing specifying timezone to bucket
-* PostgreSQL 15 support
-* Multinode HA related enhancements for natively replicated distributed hypertables
+* Use `alter_data_node()` to change the data node configuration. This function introduces the option to configure the availability of the data node.
 
 This release also includes several bug fixes.
 
